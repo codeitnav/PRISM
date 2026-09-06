@@ -23,7 +23,7 @@ docs/     project design, API contract, schema, evaluation reports
 
 ## Quick start
 
-New to the project? This gets the whole stack running in three commands.
+New to the project? This gets the whole stack running in three commands, and it is all almost everyone needs.
 
 ```bash
 git clone https://github.com/codeitnav/PRISM.git
@@ -44,23 +44,32 @@ curl http://localhost:4000/health   # server
 curl http://localhost:8000/health   # ml
 ```
 
-That's the whole setup. Everything below is reference material: environment variables, running a service outside Docker, and fixes for the handful of issues a new setup commonly hits.
+That's the whole setup. **Docker is the only thing you need installed.** You do not need Node.js or Python on your machine at all: `client`, `server`, and `ml` each run inside their own container, with all their dependencies already installed there. Do not install Node/npm or Python/pip locally "just in case", and do not run `npm install` or `pip install` on your host machine unless you specifically need section 4 below.
+
+Everything past this point is reference material: environment variables, running one service outside Docker for faster iteration, and fixes for the handful of issues a new setup commonly hits.
 
 ---
 
 ## 1. Prerequisites
 
-| Tool | Required for |
-|---|---|
-| Docker and Docker Compose | Everything. This is the only hard requirement. |
-| Node.js 22+ | Running `client` or `server` outside Docker |
-| Python 3.11 | Running `ml` outside Docker. Must be exactly 3.11, not whatever `python3` resolves to on your machine. See [Troubleshooting](#troubleshooting). |
-| About 6GB of free disk | The `ml` service's dependencies (PyTorch, CLIP, and related packages) are large |
-
-Check what you already have:
+**If you're using Docker (which is the recommended path and covers everyone getting started), the only requirements are Docker, Docker Compose, and `make`.** Nothing else needs to be installed. `make` comes preinstalled on Linux and macOS; on Windows, use WSL, or run the `docker compose` commands from the `Makefile` directly if you don't have `make`.
 
 ```bash
-docker --version && docker compose version
+docker --version && docker compose version && make --version
+```
+
+The table below is only relevant if you plan to run a service outside Docker (section 4), which is a deliberate opt-in for faster local iteration on one service, not part of normal setup.
+
+| Tool | Required for |
+|---|---|
+| Docker and Docker Compose | Everything. This is the only hard requirement for normal use. |
+| Node.js 22+ | Only if running `client` or `server` outside Docker |
+| Python 3.11 | Only if running `ml` outside Docker. Must be exactly 3.11, not whatever `python3` resolves to on your machine. See [Troubleshooting](#troubleshooting). |
+| About 6GB of free disk | Only relevant for a local `ml` install outside Docker: PyTorch, CLIP, and related packages are large |
+
+If you do need them:
+
+```bash
 node --version          # want v22 or newer
 python3.11 --version    # want 3.11.x, see Troubleshooting if missing
 ```
@@ -157,7 +166,7 @@ If you're not using Docker's local Mongo (for example, pointing at MongoDB Atlas
 
 ## 4. Running a single service outside Docker
 
-Useful for faster iteration on one service without rebuilding its image. Each service needs `mongo` reachable: either leave it running with `docker compose up mongo` in another terminal, or point `MONGO_URI` at wherever it actually lives.
+**Skip this section unless you specifically want faster local iteration on one service.** It is not part of normal setup, and `make up` does not need any of this. Use it only when rebuilding a Docker image on every change is too slow for what you're working on. Each service needs `mongo` reachable: either leave it running with `docker compose up mongo` in another terminal, or point `MONGO_URI` at wherever it actually lives.
 
 ### client
 
