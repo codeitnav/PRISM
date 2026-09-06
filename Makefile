@@ -31,7 +31,7 @@ logs:
 ps:
 	$(COMPOSE) ps
 
-## Populate MongoDB / FAISS index from /data (Task 2.3 - not yet implemented)
+## Populate MongoDB / FAISS index from /data (not yet implemented)
 seed: init-env
 	$(COMPOSE) run --rm ml python -m app.scripts.seed
 
