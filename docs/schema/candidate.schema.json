@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prism://schema/candidate.schema.json",
+  "title": "Candidate",
+  "description": "A single retrieved reference prompt shown alongside the reconstruction (FAISS nearest-neighbor result, resolved to its MongoDB document).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "prompt", "source", "similarity"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Reference prompt id (MongoDB _id of the reference_prompts document).",
+      "minLength": 1
+    },
+    "prompt": {
+      "type": "string",
+      "description": "The raw candidate prompt text.",
+      "minLength": 1
+    },
+    "source": {
+      "type": "string",
+      "description": "Reference dataset the candidate was drawn from, e.g. 'diffusiondb', 'alpaca'.",
+      "minLength": 1
+    },
+    "similarity": {
+      "type": "number",
+      "description": "Cosine similarity between the input embedding and this candidate's embedding, in [0, 1].",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "structured_fields": {
+      "description": "Weak-labeled structured fields for this candidate, if available.",
+      "oneOf": [
+        { "$ref": "prism://schema/structured-fields.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "thumbnail_url": {
+      "type": ["string", "null"],
+      "description": "URL to a thumbnail of the candidate's source image, if the candidate came from the image pipeline."
+    }
+  }
+}

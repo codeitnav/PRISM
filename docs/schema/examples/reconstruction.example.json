@@ -1,0 +1,94 @@
+{
+  "id": "66f1a2b3c4d5e6f7a8b9c0d1",
+  "modality": "image",
+  "status": "completed",
+  "input": {
+    "filename": "upload.png",
+    "content_type": "image/png",
+    "text": null,
+    "storage_path": "uploads/66f1a2b3c4d5e6f7a8b9c0d1.png"
+  },
+  "structured_fields": {
+    "subject": "a red fox curled up asleep",
+    "style": "digital painting",
+    "medium": "concept art",
+    "lighting": "soft moonlight",
+    "modifiers": ["highly detailed", "trending on artstation", "8k"],
+    "tone": "serene",
+    "negative_constraints": ["no text", "no watermark"]
+  },
+  "candidates": [
+    {
+      "id": "diffdb_0004521",
+      "prompt": "a sleeping fox under moonlight, digital painting, highly detailed, artstation",
+      "source": "diffusiondb",
+      "similarity": 0.91,
+      "structured_fields": {
+        "subject": "a sleeping fox",
+        "style": "digital painting",
+        "medium": "concept art",
+        "lighting": "moonlight",
+        "modifiers": ["highly detailed", "artstation"],
+        "tone": null,
+        "negative_constraints": []
+      },
+      "thumbnail_url": "https://cdn.example.com/thumbs/diffdb_0004521.jpg"
+    },
+    {
+      "id": "diffdb_0009981",
+      "prompt": "fox sleeping peacefully, moonlit forest, painterly style",
+      "source": "diffusiondb",
+      "similarity": 0.87,
+      "structured_fields": null,
+      "thumbnail_url": "https://cdn.example.com/thumbs/diffdb_0009981.jpg"
+    }
+  ],
+  "confidence": {
+    "score": 0.74,
+    "components": {
+      "cos_sim": 0.81,
+      "retrieval_margin": 0.04,
+      "component_agreement": 0.68
+    },
+    "weights": {
+      "alpha": 0.5,
+      "beta": 0.2,
+      "gamma": 0.3
+    }
+  },
+  "baselines": {
+    "pez": {
+      "prompt": "fox sleep night art detailed painting moon",
+      "clip_score": 0.79,
+      "latency_ms": 4200
+    },
+    "clip_tag": {
+      "prompt": "digital painting, moonlight, detailed, fox, night",
+      "tags": ["digital painting", "moonlight", "detailed", "fox", "night"],
+      "latency_ms": 310
+    }
+  },
+  "graph": {
+    "nodes": [
+      { "id": "input", "type": "input", "label": "Input", "prompt": null, "thumbnail_url": "uploads/66f1a2b3c4d5e6f7a8b9c0d1.png", "style_cluster": null },
+      { "id": "diffdb_0004521", "type": "candidate", "label": "a sleeping fox under moonlight...", "prompt": "a sleeping fox under moonlight, digital painting, highly detailed, artstation", "thumbnail_url": "https://cdn.example.com/thumbs/diffdb_0004521.jpg", "style_cluster": "digital-painting" },
+      { "id": "diffdb_0009981", "type": "candidate", "label": "fox sleeping peacefully, moonlit...", "prompt": "fox sleeping peacefully, moonlit forest, painterly style", "thumbnail_url": "https://cdn.example.com/thumbs/diffdb_0009981.jpg", "style_cluster": "digital-painting" }
+    ],
+    "edges": [
+      { "source": "input", "target": "diffdb_0004521", "weight": 0.91 },
+      { "source": "input", "target": "diffdb_0009981", "weight": 0.87 }
+    ]
+  },
+  "timings": {
+    "embedding_ms": 120,
+    "retrieval_ms": 45,
+    "captioning_ms": 890,
+    "decomposition_ms": 1500,
+    "pez_ms": 4200,
+    "regeneration_ms": null,
+    "total_ms": 6755
+  },
+  "error": null,
+  "created_at": "2026-09-06T10:15:00.000Z",
+  "updated_at": "2026-09-06T10:15:07.000Z"
+}

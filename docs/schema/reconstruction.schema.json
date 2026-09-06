@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prism://schema/reconstruction.schema.json",
+  "title": "Reconstruction",
+  "description": "The full result of a reconstruction request. Returned by POST /api/reconstruct and GET /api/reconstruct/:id, and persisted as-is in MongoDB's `reconstructions` collection (Task 2.3 / 3.1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "modality",
+    "status",
+    "input",
+    "candidates",
+    "baselines",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "MongoDB _id of this reconstruction document.",
+      "minLength": 1
+    },
+    "modality": {
+      "type": "string",
+      "enum": ["image", "text"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "processing", "completed", "failed", "degraded"],
+      "description": "'degraded' means the structured decomposition fell back to retrieval-top-1 fields (Task 5.4) - the result is usable but not from the fine-tuned decomposer."
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storage_path"],
+      "properties": {
+        "filename": { "type": ["string", "null"] },
+        "content_type": { "type": ["string", "null"] },
+        "text": {
+          "type": ["string", "null"],
+          "description": "The raw input text, when modality='text'."
+        },
+        "storage_path": {
+          "type": "string",
+          "description": "Where the uploaded file (or text blob) is persisted (e.g. GridFS id or local volume path).",
+          "minLength": 1
+        }
+      }
+    },
+    "structured_fields": {
+      "oneOf": [
+        { "$ref": "prism://schema/structured-fields.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "candidates": {
+      "type": "array",
+      "description": "Top-k retrieved candidates, ordered by descending similarity.",
+      "items": { "$ref": "prism://schema/candidate.schema.json" }
+    },
+    "confidence": {
+      "oneOf": [
+        { "$ref": "prism://schema/confidence.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "baselines": { "$ref": "prism://schema/baselines.schema.json" },
+    "graph": {
+      "oneOf": [
+        { "$ref": "prism://schema/graph.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "timings": {
+      "oneOf": [
+        { "$ref": "prism://schema/timings.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Set when status='failed'."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

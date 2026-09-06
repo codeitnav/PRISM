@@ -12,8 +12,8 @@ export function createApp() {
 
   app.use('/', healthRouter)
 
-  // TODO(Task 0.2): mount /api/reconstruct once the shared API contract is finalized
-  // TODO(Task 3.1): wire reconstruction orchestration route -> ML service -> MongoDB
+  // TODO: mount /api/reconstruct
+  // TODO: wire reconstruction orchestration route -> ML service -> MongoDB
 
   app.use((req, res) => {
     res.status(404).json({ error: 'not_found', path: req.path })

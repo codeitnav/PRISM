@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prism://schema/graph.schema.json",
+  "title": "Graph",
+  "description": "Force-directed similarity graph payload: the input node plus its retrieved candidate nodes, with edges weighted by similarity. Self-contained - the frontend renders this directly with no ML logic (Task 3.3).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["nodes", "edges"],
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/GraphNode" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/GraphEdge" }
+    }
+  },
+  "$defs": {
+    "GraphNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "label"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique within this graph. The input node's id is always 'input'; candidate node ids match Candidate.id.",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": ["input", "candidate"]
+        },
+        "label": {
+          "type": "string",
+          "description": "Short display label, e.g. a truncated prompt or 'Input'.",
+          "minLength": 1
+        },
+        "prompt": {
+          "type": ["string", "null"],
+          "description": "Full prompt text shown on node click. Null for the input node when modality is image."
+        },
+        "thumbnail_url": {
+          "type": ["string", "null"]
+        },
+        "style_cluster": {
+          "type": ["string", "null"],
+          "description": "Optional style-tag cluster label used for visual grouping in the force-directed layout."
+        }
+      }
+    },
+    "GraphEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "target", "weight"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 },
+        "weight": {
+          "type": "number",
+          "description": "Similarity in [0, 1]; the frontend maps this to edge length/strength (1 - weight).",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  }
+}

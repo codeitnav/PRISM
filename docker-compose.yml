@@ -23,11 +23,13 @@ services:
         required: false
     environment:
       MONGO_URI: mongodb://mongo:27017/prism
+      SCHEMA_DIR: /docs/schema
     ports:
       - "8000:8000"
     volumes:
       - ./ml:/app
       - ./data:/data
+      - ./docs:/docs:ro
     depends_on:
       mongo:
         condition: service_healthy
@@ -48,11 +50,13 @@ services:
     environment:
       MONGO_URI: mongodb://mongo:27017/prism
       ML_SERVICE_URL: http://ml:8000
+      SCHEMA_DIR: /docs/schema
     ports:
       - "4000:4000"
     volumes:
       - ./server:/app
       - /app/node_modules
+      - ./docs:/docs:ro
     depends_on:
       mongo:
         condition: service_healthy

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prism://schema/timings.schema.json",
+  "title": "Timings",
+  "description": "Per-stage latency breakdown for one reconstruction request, in milliseconds. Stages that are feature-flagged off (e.g. regeneration) are null, not omitted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["embedding_ms", "retrieval_ms", "total_ms"],
+  "properties": {
+    "embedding_ms": { "type": "number", "minimum": 0 },
+    "retrieval_ms": { "type": "number", "minimum": 0 },
+    "captioning_ms": { "type": ["number", "null"], "minimum": 0 },
+    "decomposition_ms": { "type": ["number", "null"], "minimum": 0 },
+    "pez_ms": { "type": ["number", "null"], "minimum": 0 },
+    "regeneration_ms": { "type": ["number", "null"], "minimum": 0 },
+    "total_ms": { "type": "number", "minimum": 0 }
+  }
+}

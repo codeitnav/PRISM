@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prism://schema/error.schema.json",
+  "title": "Error",
+  "description": "Standard error body returned by both the server and ml services on a non-2xx response.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error", "message"],
+  "properties": {
+    "error": {
+      "type": "string",
+      "description": "Machine-readable error code, e.g. 'validation_error', 'not_found', 'ml_service_unavailable'.",
+      "minLength": 1
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable description.",
+      "minLength": 1
+    },
+    "details": {
+      "description": "Optional structured detail (e.g. field-level validation errors).",
+      "type": ["object", "null"]
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prism://schema/confidence.schema.json",
+  "title": "Confidence",
+  "description": "Calibrated confidence score for the reconstruction, plus the raw components it was computed from (see Section 3 of the project design: confidence = alpha*cos_sim + beta*retrieval_margin + gamma*component_agreement, then temperature-scaled).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["score", "components"],
+  "properties": {
+    "score": {
+      "type": "number",
+      "description": "Final calibrated confidence in [0, 1]. Not a claim of exact-recovery probability - see docs/api-contract.md.",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cos_sim", "retrieval_margin", "component_agreement"],
+      "properties": {
+        "cos_sim": {
+          "type": ["number", "null"],
+          "description": "Reconstruction consistency: cosine similarity between the input embedding and the re-embedded regeneration. Null if regeneration (Task 6.1) was skipped/feature-flagged off.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "retrieval_margin": {
+          "type": "number",
+          "description": "Distance/similarity gap between the top-1 and top-2 retrieved candidates.",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "component_agreement": {
+          "type": "number",
+          "description": "Overlap between the decomposition model's structured fields and the PEZ baseline output.",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "weights": {
+      "description": "The alpha/beta/gamma weights used for this score (fitted via Task 6.3, temperature-scaled). Null before calibration is wired in.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["alpha", "beta", "gamma"],
+          "properties": {
+            "alpha": { "type": "number" },
+            "beta": { "type": "number" },
+            "gamma": { "type": "number" }
+          }
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}

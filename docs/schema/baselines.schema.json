@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prism://schema/baselines.schema.json",
+  "title": "Baselines",
+  "description": "Outputs of the two baseline reconstructors (Task 4.1/4.2), shown alongside the structured decomposition to substantiate the improvement claim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pez", "clip_tag"],
+  "properties": {
+    "pez": {
+      "description": "Hard Prompts Made Easy (PEZ) baseline: CLIP-embedding-space optimization projected to vocabulary tokens.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["prompt"],
+          "properties": {
+            "prompt": { "type": "string", "minLength": 1 },
+            "clip_score": { "type": ["number", "null"], "minimum": -1, "maximum": 1 },
+            "latency_ms": { "type": ["number", "null"], "minimum": 0 }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "clip_tag": {
+      "description": "Naive CLIP zero-shot tagging baseline against a fixed style/medium/lighting vocabulary.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["prompt", "tags"],
+          "properties": {
+            "prompt": { "type": "string", "minLength": 1 },
+            "tags": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "latency_ms": { "type": ["number", "null"], "minimum": 0 }
+          }
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}

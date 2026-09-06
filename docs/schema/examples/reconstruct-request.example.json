@@ -1,0 +1,5 @@
+{
+  "modality": "image",
+  "top_k": 10,
+  "include_regeneration": false
+}

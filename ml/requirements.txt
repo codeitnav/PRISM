@@ -1,7 +1,41 @@
+# --- Service (FastAPI microservice) ---
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 pydantic==2.9.2
 python-multipart==0.0.9
 python-dotenv==1.0.1
+
+# --- Test/dev ---
 pytest==8.3.3
 httpx==0.27.2
+jsonschema==4.23.0
+
+# --- ML / research stack ---
+# Pinned to a mutually-tested set from the same release window (Oct-Nov 2024) to
+# minimize cross-package breakage.
+#
+# IMPORTANT (verified empirically, not assumed): plain `pip install torch==2.5.1`
+# resolves PyPI's default Linux wheel, which bundles the FULL CUDA toolkit
+# (nvidia-cublas, cudnn, nccl, ...) even on a machine with no GPU - it does not
+# "detect" your hardware at install time. On a GPU box this is what you want and
+# plain `pip install -r requirements.txt` is correct. On a CPU-only box (no
+# NVIDIA GPU), install torch/torchvision from the CPU-only index FIRST, in the
+# same command as anything else that depends on torch, so the resolver can't
+# silently upgrade/swap it back to a CUDA build:
+#
+#   pip install torch==2.5.1 torchvision==0.20.1 open_clip_torch==2.29.0 \
+#     --index-url https://download.pytorch.org/whl/cpu \
+#     --extra-index-url https://pypi.org/simple
+#   pip install -r requirements.txt   # picks up the rest; torch/open_clip_torch
+#                                      # already satisfy their pins, so they're
+#                                      # left alone rather than re-resolved
+#
+# Then run `python scripts/check_env.py` to confirm what's actually usable
+# (CUDA availability, VRAM, and a real ViT-L/14 load+forward pass).
+torch==2.5.1
+open_clip_torch==2.29.0
+transformers==4.46.3
+faiss-cpu==1.9.0
+sentence-transformers==3.3.1
+peft==0.13.2
+datasets==3.1.0

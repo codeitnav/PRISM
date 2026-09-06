@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "prism://schema/structured-fields.schema.json",
+  "title": "StructuredFields",
+  "description": "Decomposed prompt structure - the system's core contribution, distinct from a raw tag blob.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["subject", "style", "medium", "modifiers", "negative_constraints"],
+  "properties": {
+    "subject": {
+      "type": "string",
+      "description": "The primary subject(s) of the prompt, e.g. 'a red fox in a snowy forest'.",
+      "minLength": 1
+    },
+    "style": {
+      "type": ["string", "null"],
+      "description": "Artistic style, e.g. 'oil painting', 'cyberpunk', 'photorealistic'."
+    },
+    "medium": {
+      "type": ["string", "null"],
+      "description": "Medium/technique, e.g. 'digital art', '35mm photograph', 'watercolor'."
+    },
+    "lighting": {
+      "type": ["string", "null"],
+      "description": "Lighting descriptor, e.g. 'golden hour', 'studio lighting', 'volumetric fog'."
+    },
+    "modifiers": {
+      "type": "array",
+      "description": "Free-form quality/detail modifiers, e.g. ['highly detailed', '8k', 'trending on artstation'].",
+      "items": { "type": "string", "minLength": 1 },
+      "default": []
+    },
+    "tone": {
+      "type": ["string", "null"],
+      "description": "Mood/tone, e.g. 'serene', 'ominous', 'whimsical'."
+    },
+    "negative_constraints": {
+      "type": "array",
+      "description": "Things the prompt implies should be avoided (from negative prompts or inferred exclusions).",
+      "items": { "type": "string", "minLength": 1 },
+      "default": []
+    }
+  }
+}
