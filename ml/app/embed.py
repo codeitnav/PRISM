@@ -62,6 +62,14 @@ def _get_clip():
     return _clip_model, _clip_preprocess
 
 
+def get_clip_model():
+    """Public accessor for the loaded CLIP model + preprocess transform, for
+    code that needs direct model access (e.g. the PEZ baseline, Task 4.1) -
+    reuses the same lazily-loaded singleton instead of loading a second copy.
+    """
+    return _get_clip()
+
+
 def _get_text_model():
     global _text_model
     if _text_model is None:

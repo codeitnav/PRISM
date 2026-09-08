@@ -1,4 +1,4 @@
-.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index
+.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index pez-baseline
 
 COMPOSE := docker compose
 
@@ -50,6 +50,10 @@ bench-embed: init-env
 ## Task 2.2: embed the train split and build the FAISS retrieval index
 build-index: init-env
 	$(COMPOSE) run --rm ml python -m scripts.build_faiss_index
+
+## Task 4.1: run the PEZ baseline on 20 test images, logs mean CLIP-score
+pez-baseline: init-env
+	$(COMPOSE) run --rm ml python -m scripts.run_pez_baseline
 
 ## Run test suites for server and ml
 test:
