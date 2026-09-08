@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import morgan from 'morgan'
 import healthRouter from './routes/health.js'
+import reconstructRouter from './routes/reconstruct.js'
 
 export function createApp() {
   const app = express()
@@ -11,9 +12,7 @@ export function createApp() {
   app.use(express.json())
 
   app.use('/', healthRouter)
-
-  // TODO: mount /api/reconstruct
-  // TODO: wire reconstruction orchestration route -> ML service -> MongoDB
+  app.use('/', reconstructRouter)
 
   app.use((req, res) => {
     res.status(404).json({ error: 'not_found', path: req.path })

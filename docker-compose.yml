@@ -67,6 +67,7 @@ services:
       - ./server:/app
       - /app/node_modules
       - ./docs:/docs:ro
+      - ./data:/data
     depends_on:
       mongo:
         condition: service_healthy

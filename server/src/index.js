@@ -1,5 +1,8 @@
 import { createApp } from './app.js'
+import { connectMongo } from './config/db.js'
 import { env } from './config/env.js'
+
+await connectMongo()
 
 const app = createApp()
 
