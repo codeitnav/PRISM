@@ -2,7 +2,8 @@
 
 **Prepared by:** Kajal (Person A — Platform, Data & Retrieval)
 **Date:** 2026-09-08
-**Covers:** Day 0 through Task 4.3 (Sync Point 1 reached, Sync Point 2 pending on Navya's side)
+**Covers:** Day 0 through Task 4.3 (Kajal) and Task 1.3 (Navya) — Sync Point 1 reached, Sync Point 2 pending on Navya's 5.3
+**Last updated:** 2026-09-08 by Navya, adding Task 1.3
 
 ---
 
@@ -53,8 +54,9 @@ The split isn't "backend vs. ML" — each person owns a full, mostly-independent
 | 4.2 | Naive CLIP-tag baseline | Kajal | ✅ Done |
 | 4.3 | Evaluation harness | Kajal | ✅ Done |
 | 1.4 | Text-side dataset (Alpaca) | Kajal | ✅ Done |
-| 1.3 | Weak structured labels | Navya | ⬜ In progress |
-| 5.1–5.5 | Captioning → LoRA decomposition → wiring | Navya | ⬜ Pending |
+| 1.3 | Weak structured labels | Navya | ✅ Done |
+| 5.1 | Captioning stage (BLIP-2/LLaVA) | Navya | ⬜ Next |
+| 5.2–5.5 | Decomposition SFT → LoRA → constrained decoding → wiring | Navya | ⬜ Pending |
 | — | **Sync Point 2 (Model Handoff)** | Both | ⬜ Waiting on Navya's 5.3 |
 
 **11 of ~16 of Kajal's tasks are complete.** All of Kajal's work through Sync Point 2 is done — Kajal is currently ahead of schedule, waiting on Navya's LoRA adapter.
@@ -147,6 +149,43 @@ Set up the text-only counterpart to Task 1.1/1.2, for whenever the text pipeline
 - Output: `data/alpaca/pairs.parquet`, `data/splits/alpaca_{train,val,test}.json`
 - This is purely a data-prep step (optional per the plan, no downstream blockers) — no embeddings/FAISS/Mongo were built for it, since that's Navya's text-pipeline task, not part of Kajal's list.
 
+### Task 1.3 — Weak Structured Labels *(Navya)*
+Turned every raw DiffusionDB prompt into the frozen `StructuredFields` schema
+(subject / style / medium / lighting / modifiers / tone / negative_constraints) with a rule +
+lexicon pass — the supervision targets for the decomposition model (5.2/5.3) and the ground
+truth for component-wise scoring in the eval harness.
+
+- Output: `data/diffusiondb/pairs_labeled.parquet` (all 700 rows, train+val+test), plus
+  `structured_fields` written into all **560** `reference_prompts` documents via
+  `update_one($set)` — **0 nulls remaining, `faiss_id` intact on all 560** (verified), so
+  retrieval is unaffected.
+- **Audited field-level precision (100 random samples, seed 1337): overall 0.742.**
+  Per field: `medium` 1.00, `style` 0.93, `lighting` 0.93, `subject` 0.87, `tone` 0.75,
+  `modifiers` 0.26. Full analysis: `docs/label-quality.md`.
+- **Corpus-frequency mining paid off twice.** It exposed that these DiffusionDB configs
+  store prompts *detokenized* — `3 d render`, `4 k`, `5 0 mm`, `art station` — which was
+  silently costing ~230 lexicon hits across 700 prompts. Matching now normalizes the
+  spacing, lifting `medium` coverage 37.9% → 50.3% (style, lighting, tone also up). It also
+  surfaced ~40 genuine new vocabulary terms, now promoted into the lexicons.
+- **The `modifiers` field is a known-weak junk drawer (precision 0.26)** — it is the sink
+  for anything the lexicons don't recognise, so it absorbs scene detail that belongs in
+  `subject` plus second-place values the single-slot schema has nowhere to put. *Action for
+  5.2: do not train the decomposer to reproduce `modifiers` verbatim* — either weight the
+  component loss towards the typed fields or filter `modifiers` to lexicon-matched entries
+  for the SFT target.
+- **`negative_constraints` is effectively empty — 4 of 700 rows (0.6%).** DiffusionDB's
+  `2m_random_*` prompts predate widespread negative-prompt use. This component should be
+  **excluded from the component-F1 headline** in 4.3/8.1 rather than reported as solved —
+  raising at Sync Point 3.
+- **Scope deviation:** the roadmap pairs the rule pass with 5–10K LLM-labeled seed prompts.
+  That is larger than the entire 700-prompt corpus, and this environment has no LLM API
+  credentials. The override hook is built and wired (`llm_seed_labels.jsonl` →
+  per-prompt override, provenance tracked in a `label_provenance` column) but unused, so
+  **all precision numbers are rule-pass-only**. The audit is also an assistant judgment
+  pass rather than independent human annotation; all 314 per-field verdicts are stored in
+  `data/diffusiondb/label_audit.jsonl` for re-checking.
+- Tests: 23 added (`ml/tests/test_weak_label.py`); **ml suite now 38/38, server 9/9**.
+
 ---
 
 ## 6. Summary of Scope Decisions (for the report/viva)
@@ -160,11 +199,12 @@ All driven by the same root cause: **CPU-only hardware, limited storage, limited
 | Text embedding model | E5-large or BGE | all-MiniLM-L6-v2 | Within spec; ~16x smaller |
 | BERTScore backbone | (library default: roberta-large) | distilbert-base-uncased | Smaller, faster |
 | PEZ iterations | Few hundred–thousands (paper) | 100 | CPU constraint; batched for efficiency |
+| Weak-label LLM seed set | 5–10K LLM-labeled prompts | none (hook built, unused) | Seed set would exceed the 700-prompt corpus; no LLM credentials in this env |
 
 ## 7. What's Next
 
-- **Kajal:** nothing required until Navya delivers — all work through Sync Point 2 is done.
-- **Navya:** Task 1.3 (weak labels) and 5.1 (captioning) are unblocked now; Task 5.2 was waiting on Kajal's 2.4 and 4.1, both now delivered.
+- **Kajal:** nothing required until Navya delivers — all work through Sync Point 2 is done. Two things worth a reply, though: (a) confirm the data-provenance question in §9, and (b) note that `negative_constraints` should come out of the component-F1 headline in 4.3/8.1.
+- **Navya:** Task 1.3 done. **Next up: 5.1 (captioning)**, then 5.2 (decomposition SFT dataset) — 5.2's inputs are all present now (weak labels from 1.3, retrieval from Kajal's 2.4, PEZ output from her 4.1).
 - **Sync Point 2 (Model Handoff):** Navya delivers her trained LoRA decomposition model; Kajal wires it into the evaluation harness (already built) for real, final metrics.
 
 ## 8. Key Files Reference
@@ -172,8 +212,47 @@ All driven by the same root cause: **CPU-only hardware, limited storage, limited
 | What | Where |
 |---|---|
 | Sync 1 technical handoff | `docs/sync1-handover.md` |
+| Weak-label quality + audit | `docs/label-quality.md` |
 | API contract (frozen) | `docs/api-contract.md` |
 | PEZ baseline results | `docs/results/pez_baseline.md` |
 | CLIP-tag baseline results | `docs/results/cliptag_baseline.md` |
 | Combined evaluation | `docs/results/baselines.md`, `.csv` |
-| All `make` commands | `Makefile` (targets: `ingest`, `split`, `bench-embed`, `build-index`, `seed`, `pez-baseline`, `cliptag-baseline`, `eval`, `ingest-alpaca`, `split-alpaca`) |
+| All `make` commands | `Makefile` (targets: `ingest`, `split`, `bench-embed`, `build-index`, `seed`, `pez-baseline`, `cliptag-baseline`, `eval`, `ingest-alpaca`, `split-alpaca`, `weak-label`, `audit-labels`) |
+
+---
+
+## 9. Open Item — Data Provenance Between Machines *(added by Navya, 2026-09-08)*
+
+`data/` is gitignored, so per §6 of `docs/sync1-handover.md` I rebuilt it on my machine by
+re-running Kajal's pipeline rather than copying her folder: `make ingest` → `split` →
+`build-index` → `seed`. That reproduced the headline shape exactly — **700 pairs,
+560/70/70 splits, prompt-disjointness verified at cosine 0.95, self-retrieval smoke test
+passing at rank 1** — and everything downstream of it is internally consistent
+(`pairs.parquet` ids ↔ `id_map.json` ↔ the 560 Mongo `_id`s, all verified).
+
+One number did not match, and it's worth a moment of Kajal's time:
+
+| Metric | Kajal's report (§5, Task 1.2) | My re-run |
+|---|---|---|
+| Near-duplicate prompt clusters | 54 (129 pairs) | **62 (155 pairs)** |
+
+The split script is deterministic given the same input, so a different cluster count
+suggests the **ingested 700 pairs may not be byte-identical between our two machines** —
+plausibly a different `poloclub/diffusiondb` revision, or a filter tweak between her run
+and the version now in the repo. (The status report is also internally inconsistent here:
+Task 1.2 says 54 clusters / 129 pairs, while the Task 1.4 note cites "110 on the image
+side.")
+
+**Why it matters:** nothing is broken today, because each machine's index, Mongo
+collection and labels are built from the same local corpus. The risk is only at handoff —
+if we ever exchange artifacts keyed by dataset id (my `pairs_labeled.parquet`, her
+`index.faiss` / PEZ result cache), an id could resolve to a *different* prompt on the other
+side, and it would fail silently rather than loudly.
+
+**Suggested resolution, cheapest first:**
+1. Compare a checksum of the prompt column — e.g. `sha256` over the `id,prompt` pairs
+   sorted by id — and confirm we're on the same corpus.
+2. If they differ, pick one machine's `data/` as canonical for all shared artifacts and
+   pin the HF dataset revision in `scripts/ingest_diffusiondb.py`.
+3. Either way, this belongs in `docs/REPRODUCE.md` for Task 8.5, since the reproducibility
+   pack claims a clean clone reproduces the headline table from scratch.

@@ -1,4 +1,4 @@
-.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index pez-baseline cliptag-baseline eval ingest-alpaca split-alpaca
+.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index pez-baseline cliptag-baseline eval ingest-alpaca split-alpaca weak-label audit-labels
 
 COMPOSE := docker compose
 
@@ -62,6 +62,16 @@ cliptag-baseline: init-env
 ## Task 4.3: score both baselines through the shared evaluation harness
 eval: init-env
 	$(COMPOSE) run --rm ml python -m scripts.run_eval
+
+## Task 1.3: apply weak structured labels; writes pairs_labeled.parquet and
+## fills structured_fields on the seeded reference_prompts documents
+weak-label: init-env
+	$(COMPOSE) run --rm ml python -m scripts.run_weak_label
+
+## Task 1.3: emit the 100-sample label audit worksheet (then fill in verdicts
+## and re-run with --score to produce docs/label-quality.md)
+audit-labels: init-env
+	$(COMPOSE) run --rm ml python -m scripts.audit_weak_labels --emit
 
 ## Task 1.4: download + curate the Alpaca text subset into /data/alpaca
 ingest-alpaca: init-env
