@@ -52,12 +52,12 @@ The split isn't "backend vs. ML" — each person owns a full, mostly-independent
 | 4.1 | PEZ baseline | Kajal | ✅ Done |
 | 4.2 | Naive CLIP-tag baseline | Kajal | ✅ Done |
 | 4.3 | Evaluation harness | Kajal | ✅ Done |
+| 1.4 | Text-side dataset (Alpaca) | Kajal | ✅ Done |
 | 1.3 | Weak structured labels | Navya | ⬜ In progress |
 | 5.1–5.5 | Captioning → LoRA decomposition → wiring | Navya | ⬜ Pending |
 | — | **Sync Point 2 (Model Handoff)** | Both | ⬜ Waiting on Navya's 5.3 |
-| 1.4 | Text-side dataset | Kajal | ⬜ Optional, no blockers |
 
-**10 of ~16 of Kajal's tasks are complete.** All required work before Sync Point 2 is done — Kajal is currently ahead of schedule, waiting on Navya's LoRA adapter.
+**11 of ~16 of Kajal's tasks are complete.** All of Kajal's work through Sync Point 2 is done — Kajal is currently ahead of schedule, waiting on Navya's LoRA adapter.
 
 ---
 
@@ -138,6 +138,15 @@ Built one shared scoring system that runs any reconstruction method through the 
 
 - Full results: `docs/results/baselines.md` + `.csv`
 
+### Task 1.4 — Text-Side Dataset (Alpaca)
+Set up the text-only counterpart to Task 1.1/1.2, for whenever the text pipeline (Navya's Task 7.2) needs a reference set to retrieve/train against.
+
+- Downloaded the cleaned Stanford Alpaca instruction dataset (`yahma/alpaca-cleaned`) and curated **700 (prompt, output) pairs** — same scope cap as the image side, for consistency. Mapping: an Alpaca row's `output` (generated text) plays the role an image plays on the image side; its `instruction` (+ `input`, if present) is the prompt to be reconstructed.
+- Filtered on prompt length (3-60 tokens) and non-empty output; 0 near-duplicate prompts found in this subset (vs. 110 on the image side), so no dedup was needed.
+- Reused Task 1.2's exact prompt-disjoint splitting method (same Union-Find clustering, same 0.95 cosine threshold) on the Alpaca prompts: **560 train / 70 val / 70 test**, verified zero cross-split near-duplicate prompts.
+- Output: `data/alpaca/pairs.parquet`, `data/splits/alpaca_{train,val,test}.json`
+- This is purely a data-prep step (optional per the plan, no downstream blockers) — no embeddings/FAISS/Mongo were built for it, since that's Navya's text-pipeline task, not part of Kajal's list.
+
 ---
 
 ## 6. Summary of Scope Decisions (for the report/viva)
@@ -154,7 +163,7 @@ All driven by the same root cause: **CPU-only hardware, limited storage, limited
 
 ## 7. What's Next
 
-- **Kajal:** optionally Task 1.4 (text-side dataset), otherwise waiting on Sync Point 2.
+- **Kajal:** nothing required until Navya delivers — all work through Sync Point 2 is done.
 - **Navya:** Task 1.3 (weak labels) and 5.1 (captioning) are unblocked now; Task 5.2 was waiting on Kajal's 2.4 and 4.1, both now delivered.
 - **Sync Point 2 (Model Handoff):** Navya delivers her trained LoRA decomposition model; Kajal wires it into the evaluation harness (already built) for real, final metrics.
 
@@ -167,4 +176,4 @@ All driven by the same root cause: **CPU-only hardware, limited storage, limited
 | PEZ baseline results | `docs/results/pez_baseline.md` |
 | CLIP-tag baseline results | `docs/results/cliptag_baseline.md` |
 | Combined evaluation | `docs/results/baselines.md`, `.csv` |
-| All `make` commands | `Makefile` (targets: `ingest`, `split`, `bench-embed`, `build-index`, `seed`, `pez-baseline`, `cliptag-baseline`, `eval`) |
+| All `make` commands | `Makefile` (targets: `ingest`, `split`, `bench-embed`, `build-index`, `seed`, `pez-baseline`, `cliptag-baseline`, `eval`, `ingest-alpaca`, `split-alpaca`) |

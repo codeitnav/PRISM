@@ -1,4 +1,4 @@
-.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index pez-baseline cliptag-baseline eval
+.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index pez-baseline cliptag-baseline eval ingest-alpaca split-alpaca
 
 COMPOSE := docker compose
 
@@ -62,6 +62,14 @@ cliptag-baseline: init-env
 ## Task 4.3: score both baselines through the shared evaluation harness
 eval: init-env
 	$(COMPOSE) run --rm ml python -m scripts.run_eval
+
+## Task 1.4: download + curate the Alpaca text subset into /data/alpaca
+ingest-alpaca: init-env
+	$(COMPOSE) run --rm ml python scripts/ingest_alpaca.py
+
+## Task 1.4: build prompt-disjoint train/val/test splits for the Alpaca pairs
+split-alpaca: init-env
+	$(COMPOSE) run --rm ml python -m scripts.split_alpaca
 
 ## Run test suites for server and ml
 test:
