@@ -7,8 +7,12 @@ directly comparable, and logs the same CLIP-score metric (cosine similarity
 between the generated prompt's text embedding and the original image).
 
 Output:
-    data/results/cliptag_baseline.md (copy into docs/results/ afterward -
-    docs/ is mounted read-only in the ml container)
+    data/results/cliptag_baseline.md   - per-image results table
+    data/results/cliptag_baseline.json - same data, machine-readable (so
+                                         Task 4.3's eval harness can reuse
+                                         these results instead of rerunning)
+    (copy the .md into docs/results/ afterward - docs/ is mounted read-only
+    in the ml container)
 
 Usage (inside the ml container):
     docker compose run --rm ml python -m scripts.run_cliptag_baseline
@@ -30,7 +34,8 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 PAIRS_PATH = DATA_DIR / "diffusiondb" / "pairs.parquet"
 IMAGES_DIR = DATA_DIR / "diffusiondb"
 TEST_SPLIT_PATH = DATA_DIR / "splits" / "test.json"
-RESULTS_PATH = DATA_DIR / "results" / "cliptag_baseline.md"
+RESULTS_MD_PATH = DATA_DIR / "results" / "cliptag_baseline.md"
+RESULTS_JSON_PATH = DATA_DIR / "results" / "cliptag_baseline.json"
 
 NUM_TEST_IMAGES = 20
 
@@ -52,8 +57,8 @@ def main() -> None:
     print(f"\nDone in {result.wall_clock_seconds:.2f}s")
     print(f"Mean CLIP-score: {result.mean_cosine_similarity:.4f}\n")
 
-    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(RESULTS_PATH, "w") as f:
+    RESULTS_MD_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(RESULTS_MD_PATH, "w") as f:
         f.write("# Naive CLIP-tag Baseline Results (Task 4.2)\n\n")
         f.write(
             f"Ran on the same {len(rows)} test-split images as the PEZ baseline (Task 4.1), "
@@ -67,8 +72,21 @@ def main() -> None:
         for row, item in zip(rows, result.items):
             original = row["prompt"].replace("|", "/")[:50]
             f.write(f"| {row['id']} | {original} | {item.prompt} | {item.cosine_similarity:.4f} |\n")
+    print(f"Saved -> {RESULTS_MD_PATH}")
 
-    print(f"Saved -> {RESULTS_PATH}")
+    with open(RESULTS_JSON_PATH, "w") as f:
+        json.dump(
+            {
+                "wall_clock_seconds": result.wall_clock_seconds,
+                "items": [
+                    {"id": row["id"], "prompt": item.prompt, "cosine_similarity": item.cosine_similarity}
+                    for row, item in zip(rows, result.items)
+                ],
+            },
+            f,
+            indent=2,
+        )
+    print(f"Saved -> {RESULTS_JSON_PATH}")
 
 
 if __name__ == "__main__":

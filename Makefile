@@ -1,4 +1,4 @@
-.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index pez-baseline cliptag-baseline
+.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index pez-baseline cliptag-baseline eval
 
 COMPOSE := docker compose
 
@@ -58,6 +58,10 @@ pez-baseline: init-env
 ## Task 4.2: run the naive CLIP-tag baseline on the same 20 test images
 cliptag-baseline: init-env
 	$(COMPOSE) run --rm ml python -m scripts.run_cliptag_baseline
+
+## Task 4.3: score both baselines through the shared evaluation harness
+eval: init-env
+	$(COMPOSE) run --rm ml python -m scripts.run_eval
 
 ## Run test suites for server and ml
 test:

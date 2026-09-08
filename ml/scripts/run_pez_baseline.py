@@ -9,9 +9,13 @@ mean across the set. This is the number every later reconstruction method
 in this project has to beat.
 
 Output:
-    data/results/pez_baseline.md - per-image results table + mean CLIP-score
-    (copy this into docs/results/ afterward - docs/ is mounted read-only in
-    the ml container, see docker-compose.yml)
+    data/results/pez_baseline.md   - per-image results table + mean CLIP-score
+    data/results/pez_baseline.json - same data, machine-readable (so Task
+                                     4.3's eval harness can reuse these
+                                     already-computed results instead of
+                                     re-running this ~20+ minute optimization)
+    (copy the .md into docs/results/ afterward - docs/ is mounted read-only
+    in the ml container, see docker-compose.yml)
 
 Usage (inside the ml container):
     docker compose run --rm ml python -m scripts.run_pez_baseline
@@ -33,7 +37,8 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 PAIRS_PATH = DATA_DIR / "diffusiondb" / "pairs.parquet"
 IMAGES_DIR = DATA_DIR / "diffusiondb"
 TEST_SPLIT_PATH = DATA_DIR / "splits" / "test.json"
-RESULTS_PATH = DATA_DIR / "results" / "pez_baseline.md"
+RESULTS_MD_PATH = DATA_DIR / "results" / "pez_baseline.md"
+RESULTS_JSON_PATH = DATA_DIR / "results" / "pez_baseline.json"
 
 NUM_TEST_IMAGES = 20
 
@@ -55,8 +60,8 @@ def main() -> None:
     print(f"\nDone in {result.wall_clock_seconds:.1f}s ({result.iterations} iterations, {result.num_tokens} soft tokens)")
     print(f"Mean CLIP-score: {result.mean_cosine_similarity:.4f}\n")
 
-    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(RESULTS_PATH, "w") as f:
+    RESULTS_MD_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(RESULTS_MD_PATH, "w") as f:
         f.write("# PEZ Baseline Results (Task 4.1)\n\n")
         f.write(
             f"Ran on {len(rows)} test-split images, {result.iterations} optimization iterations, "
@@ -70,8 +75,23 @@ def main() -> None:
             original = row["prompt"].replace("|", "/")[:50]
             pez_prompt = item.prompt.replace("|", "/")
             f.write(f"| {row['id']} | {original} | {pez_prompt} | {item.cosine_similarity:.4f} |\n")
+    print(f"Saved -> {RESULTS_MD_PATH}")
 
-    print(f"Saved -> {RESULTS_PATH}")
+    with open(RESULTS_JSON_PATH, "w") as f:
+        json.dump(
+            {
+                "iterations": result.iterations,
+                "num_tokens": result.num_tokens,
+                "wall_clock_seconds": result.wall_clock_seconds,
+                "items": [
+                    {"id": row["id"], "prompt": item.prompt, "cosine_similarity": item.cosine_similarity}
+                    for row, item in zip(rows, result.items)
+                ],
+            },
+            f,
+            indent=2,
+        )
+    print(f"Saved -> {RESULTS_JSON_PATH}")
 
 
 if __name__ == "__main__":
