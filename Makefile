@@ -1,4 +1,4 @@
-.PHONY: up down build restart logs ps seed test clean init-env
+.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index
 
 COMPOSE := docker compose
 
@@ -31,9 +31,25 @@ logs:
 ps:
 	$(COMPOSE) ps
 
-## Populate MongoDB / FAISS index from /data (not yet implemented)
+## Task 2.3: populate MongoDB's reference_prompts collection from /data
 seed: init-env
-	$(COMPOSE) run --rm ml python -m app.scripts.seed
+	$(COMPOSE) run --rm ml python -m scripts.seed_mongo
+
+## Task 1.1: download + curate the DiffusionDB subset into /data/diffusiondb
+ingest: init-env
+	$(COMPOSE) run --rm ml python scripts/ingest_diffusiondb.py
+
+## Task 1.2: build prompt-disjoint train/val/test splits into /data/splits
+split: init-env
+	$(COMPOSE) run --rm ml python scripts/split_dataset.py
+
+## Task 2.1: log embedding throughput on a sample of ingested data
+bench-embed: init-env
+	$(COMPOSE) run --rm ml python -m scripts.bench_embed
+
+## Task 2.2: embed the train split and build the FAISS retrieval index
+build-index: init-env
+	$(COMPOSE) run --rm ml python -m scripts.build_faiss_index
 
 ## Run test suites for server and ml
 test:

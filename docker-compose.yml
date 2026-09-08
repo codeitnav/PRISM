@@ -24,12 +24,22 @@ services:
     environment:
       MONGO_URI: mongodb://mongo:27017/prism
       SCHEMA_DIR: /docs/schema
+      # Persist downloaded model weights (CLIP, E5-large, ...) on a named
+      # Docker volume, since `docker compose run --rm` throws away the
+      # container filesystem every time - without this, every one-off script
+      # re-downloads ~2GB of models from scratch. This deliberately is NOT
+      # under /data (which is bind-mounted from the Windows host): model
+      # loading reads dozens of small config/shard files, and the Docker
+      # Desktop Windows<->WSL2 bind-mount bridge is very slow for that access
+      # pattern. A named volume lives in the Linux VM's native filesystem.
+      HF_HOME: /hf_cache
     ports:
       - "8000:8000"
     volumes:
       - ./ml:/app
       - ./data:/data
       - ./docs:/docs:ro
+      - hf_cache:/hf_cache
     depends_on:
       mongo:
         condition: service_healthy
@@ -88,3 +98,4 @@ services:
 
 volumes:
   mongo_data:
+  hf_cache:
