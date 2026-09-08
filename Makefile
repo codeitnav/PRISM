@@ -1,4 +1,4 @@
-.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index pez-baseline cliptag-baseline eval ingest-alpaca split-alpaca weak-label audit-labels
+.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index pez-baseline cliptag-baseline eval ingest-alpaca split-alpaca weak-label audit-labels caption
 
 COMPOSE := docker compose
 
@@ -72,6 +72,11 @@ weak-label: init-env
 ## and re-run with --score to produce docs/label-quality.md)
 audit-labels: init-env
 	$(COMPOSE) run --rm ml python -m scripts.audit_weak_labels --emit
+
+## Task 5.1: caption the test split with BLIP; captions cached by image hash.
+## Add SPLITS="train val test" to caption more (5.2 needs the train split).
+caption: init-env
+	$(COMPOSE) run --rm ml python -m scripts.run_captioning $(if $(SPLITS),--splits $(SPLITS),)
 
 ## Task 1.4: download + curate the Alpaca text subset into /data/alpaca
 ingest-alpaca: init-env

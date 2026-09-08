@@ -2,8 +2,8 @@
 
 **Prepared by:** Kajal (Person A — Platform, Data & Retrieval)
 **Date:** 2026-09-08
-**Covers:** Day 0 through Task 4.3 (Kajal) and Task 1.3 (Navya) — Sync Point 1 reached, Sync Point 2 pending on Navya's 5.3
-**Last updated:** 2026-09-08 by Navya, adding Task 1.3
+**Covers:** Day 0 through Task 4.3 (Kajal) and Tasks 1.3, 5.1 (Navya) — Sync Point 1 reached, Sync Point 2 pending on Navya's 5.3
+**Last updated:** 2026-09-08 by Navya, adding Tasks 1.3 and 5.1
 
 ---
 
@@ -55,8 +55,9 @@ The split isn't "backend vs. ML" — each person owns a full, mostly-independent
 | 4.3 | Evaluation harness | Kajal | ✅ Done |
 | 1.4 | Text-side dataset (Alpaca) | Kajal | ✅ Done |
 | 1.3 | Weak structured labels | Navya | ✅ Done |
-| 5.1 | Captioning stage (BLIP-2/LLaVA) | Navya | ⬜ Next |
-| 5.2–5.5 | Decomposition SFT → LoRA → constrained decoding → wiring | Navya | ⬜ Pending |
+| 5.1 | Captioning stage (BLIP) | Navya | ✅ Done |
+| 5.2 | Decomposition SFT dataset construction | Navya | ⬜ Next |
+| 5.3–5.5 | LoRA fine-tune → constrained decoding → wiring | Navya | ⬜ Pending |
 | — | **Sync Point 2 (Model Handoff)** | Both | ⬜ Waiting on Navya's 5.3 |
 
 **11 of ~16 of Kajal's tasks are complete.** All of Kajal's work through Sync Point 2 is done — Kajal is currently ahead of schedule, waiting on Navya's LoRA adapter.
@@ -186,6 +187,45 @@ truth for component-wise scoring in the eval harness.
   `data/diffusiondb/label_audit.jsonl` for re-checking.
 - Tests: 23 added (`ml/tests/test_weak_label.py`); **ml suite now 38/38, server 9/9**.
 
+### Task 5.1 — Captioning Stage *(Navya)*
+Added a captioning stage: `app.caption.caption_images(list[bytes]) -> list[str]`, a
+`POST /internal/caption` endpoint, and a runner that captions dataset splits. The caption is
+one of three inputs the decomposition model is conditioned on in Task 5.2 — alongside
+Kajal's retrieved candidates and her PEZ output — and it supplies what neither of those can:
+a literal, grounded description of what is actually *in* the image, independent of whatever
+the nearest training prompt happened to say.
+
+- Captions cached to disk by image content hash (same pattern as `app.embed`), with the
+  **model name in the cache key** so switching checkpoints can't serve stale captions.
+  Deterministic beam search (`num_beams=3`), not sampling — 5.2 pairs each caption with a
+  structured target, so captions must be reproducible across runs.
+- **Done-condition met:** all **70 test-split** images captioned and persisted to
+  `data/captions/captions.parquet`. 0 empty captions; mean length 13.8 words;
+  **8.33 s/image** on this CPU. Train+val (630 more) captioned as well, since 5.2 needs the
+  train split.
+- **Scope deviation — model choice, measured not assumed.** The roadmap asks for BLIP-2, or
+  LLaVA-1.5-7B "if VRAM allows". Reading each checkpoint's own config: `blip2-opt-2.7b` is
+  ~3.74B params (OPT-2.7b + EVA ViT-g + Q-Former) = **~15 GB fp32 / ~7.5 GB bf16**, and
+  LLaVA-1.5-7B ~28 GB / ~14 GB — against **~6.3 GB of RAM actually available** on this
+  CPU-only box. Neither fits, even at bf16. Default is therefore **BLIP-1 large** (~470M,
+  ~1.9 GB): the direct predecessor, same Salesforce BLIP captioning lineage. This is a
+  *configuration* limit, not a code limit — `CAPTION_MODEL` selects any BLIP/BLIP-2
+  checkpoint and the architecture is chosen from its config, so on a GPU machine
+  `CAPTION_MODEL=Salesforce/blip2-opt-2.7b make caption` runs the roadmap's intended model
+  with no code change.
+- **Measured artifact worth knowing about for 5.2:** BLIP opens **55 of 70 captions (79%)**
+  with a contentless phrase — `there is/are` (69%), `this is` (6%), `an image/picture of`
+  (4%). As an input feature that is pure noise, so `strip_caption_boilerplate()` removes it
+  (verified: 0/70 residual). It deliberately **preserves** `photo of`, `painting of`,
+  `screenshot of`, `3d rendering of` — those name the medium, which is real visual evidence
+  and one of the fields being reconstructed. The stripper is *not* applied inside
+  `caption_images()`: the cache and parquet keep the raw model output as a faithful record,
+  and callers opt in.
+- Tests: 29 added (`ml/tests/test_caption.py`) — cache keying, batching, order preservation
+  under partial cache hits, architecture dispatch, and the stripper's signal/noise boundary,
+  plus one test that loads the real checkpoint end to end, and the endpoint contract (422 for bad input vs 503 for a genuinely unavailable model - the backend treats 5xx as transient). **ml suite now 67/67.**
+- Results: `docs/results/captioning.md`
+
 ---
 
 ## 6. Summary of Scope Decisions (for the report/viva)
@@ -200,11 +240,12 @@ All driven by the same root cause: **CPU-only hardware, limited storage, limited
 | BERTScore backbone | (library default: roberta-large) | distilbert-base-uncased | Smaller, faster |
 | PEZ iterations | Few hundred–thousands (paper) | 100 | CPU constraint; batched for efficiency |
 | Weak-label LLM seed set | 5–10K LLM-labeled prompts | none (hook built, unused) | Seed set would exceed the 700-prompt corpus; no LLM credentials in this env |
+| Captioning model | BLIP-2, or LLaVA-1.5-7B if VRAM allows | BLIP-1 large (~470M) | BLIP-2 needs ~7.5GB bf16 / ~15GB fp32 vs ~6.3GB available, CPU-only; env-swappable, no code change needed on a GPU box |
 
 ## 7. What's Next
 
 - **Kajal:** nothing required until Navya delivers — all work through Sync Point 2 is done. Two things worth a reply, though: (a) confirm the data-provenance question in §9, and (b) note that `negative_constraints` should come out of the component-F1 headline in 4.3/8.1.
-- **Navya:** Task 1.3 done. **Next up: 5.1 (captioning)**, then 5.2 (decomposition SFT dataset) — 5.2's inputs are all present now (weak labels from 1.3, retrieval from Kajal's 2.4, PEZ output from her 4.1).
+- **Navya:** Tasks 1.3 and 5.1 done. **Next up: 5.2 (decomposition SFT dataset)** — every input it needs now exists: weak-labeled structured targets (1.3), captions (5.1), retrieved candidates (Kajal's 2.4) and PEZ output (her 4.1). Then 5.3 (LoRA fine-tune), which is the Sync Point 2 deliverable.
 - **Sync Point 2 (Model Handoff):** Navya delivers her trained LoRA decomposition model; Kajal wires it into the evaluation harness (already built) for real, final metrics.
 
 ## 8. Key Files Reference
@@ -213,11 +254,12 @@ All driven by the same root cause: **CPU-only hardware, limited storage, limited
 |---|---|
 | Sync 1 technical handoff | `docs/sync1-handover.md` |
 | Weak-label quality + audit | `docs/label-quality.md` |
+| Captioning results + model rationale | `docs/results/captioning.md` |
 | API contract (frozen) | `docs/api-contract.md` |
 | PEZ baseline results | `docs/results/pez_baseline.md` |
 | CLIP-tag baseline results | `docs/results/cliptag_baseline.md` |
 | Combined evaluation | `docs/results/baselines.md`, `.csv` |
-| All `make` commands | `Makefile` (targets: `ingest`, `split`, `bench-embed`, `build-index`, `seed`, `pez-baseline`, `cliptag-baseline`, `eval`, `ingest-alpaca`, `split-alpaca`, `weak-label`, `audit-labels`) |
+| All `make` commands | `Makefile` (targets: `ingest`, `split`, `bench-embed`, `build-index`, `seed`, `pez-baseline`, `cliptag-baseline`, `eval`, `ingest-alpaca`, `split-alpaca`, `weak-label`, `audit-labels`, `caption`) |
 
 ---
 
