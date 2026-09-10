@@ -2,8 +2,8 @@
 
 **Prepared by:** Kajal (Person A — Platform, Data & Retrieval)
 **Date:** 2026-09-08
-**Covers:** Day 0 through Task 4.3 (Kajal) and Tasks 1.3, 5.1 (Navya) — Sync Point 1 reached, Sync Point 2 pending on Navya's 5.3
-**Last updated:** 2026-09-08 by Navya, adding Tasks 1.3 and 5.1
+**Covers:** Day 0 through Task 4.3 (Kajal) and Tasks 1.3, 5.1, 5.2, 5.3 (Navya) — Sync Point 1 reached, Sync Point 2 pending on Navya's 5.3
+**Last updated:** 2026-09-11 by Navya, adding Task 5.3
 
 ---
 
@@ -56,9 +56,11 @@ The split isn't "backend vs. ML" — each person owns a full, mostly-independent
 | 1.4 | Text-side dataset (Alpaca) | Kajal | ✅ Done |
 | 1.3 | Weak structured labels | Navya | ✅ Done |
 | 5.1 | Captioning stage (BLIP) | Navya | ✅ Done |
-| 5.2 | Decomposition SFT dataset construction | Navya | ⬜ Next |
-| 5.3–5.5 | LoRA fine-tune → constrained decoding → wiring | Navya | ⬜ Pending |
-| — | **Sync Point 2 (Model Handoff)** | Both | ⬜ Waiting on Navya's 5.3 |
+| 5.2 | Decomposition SFT dataset construction | Navya | ✅ Done |
+| 5.3 | LoRA fine-tune (SmolLM2-135M) | Navya | ✅ Done (Sync Point 2 deliverable) |
+| 5.4 | Constrained decoding + fallback | Navya | ⬜ Next |
+| 5.5 | Wire decomposition into pipeline | Navya | ⬜ Pending |
+| — | **Sync Point 2 (Model Handoff)** | Both | ✅ Adapter ready: `ml/models/decomposer-lora` |
 
 **11 of ~16 of Kajal's tasks are complete.** All of Kajal's work through Sync Point 2 is done — Kajal is currently ahead of schedule, waiting on Navya's LoRA adapter.
 
@@ -226,6 +228,113 @@ the nearest training prompt happened to say.
   plus one test that loads the real checkpoint end to end, and the endpoint contract (422 for bad input vs 503 for a genuinely unavailable model - the backend treats 5xx as transient). **ml suite now 67/67.**
 - Results: `docs/results/captioning.md`
 
+### Task 5.2 — Decomposition SFT Dataset *(Navya)*
+Joined all four upstream artifacts into the supervised fine-tuning set Task 5.3 trains on:
+`input = {caption, top-5 retrieved prompts, PEZ prompt}`, `target = the weak-labeled
+structured JSON of the true prompt`.
+
+- Output: **`data/decomp_sft.jsonl`** — **700 rows** (560 train / 70 val / 70 test),
+  **700/700 schema-valid**. The held-out eval split travels *with* the dataset (every row
+  carries its own `split`) rather than in a separate file that can drift out of sync.
+- **Strict JSON targets enforced at the artifact level, not just in memory.**
+  `app.sft.validate_row` re-checks every serialized row: `target_text` must parse, carry
+  exactly the schema's keys in canonical order, satisfy `StructuredFields`, agree with the
+  structured `target`, and be byte-identical to the canonical rendering. The builder exits
+  non-zero on any failure, so a bad dataset cannot reach disk silently.
+- **Found and fixed a leakage trap.** The FAISS index *is* the 560 train images, so every
+  train row retrieved **itself** at rank 1 with similarity ~1.0 — and that prompt is exactly
+  what its target was derived from. Left in, the dataset would have taught the model to copy
+  `retrieved_prompts[0]`, ignore the caption and PEZ entirely, and then collapse at
+  inference, where an unseen image is never in the index. Self-matches are dropped and the
+  invariant is re-checked per row: the guard fired on **560 of 560 train rows and 0 val/test
+  rows** — exactly where leakage exists and nowhere else.
+- **The subtler half of that call.** My first version of the guard rejected any row whose
+  true prompt appeared anywhere in `input_text`. It fired on row `000028` — but the culprit
+  was image `000032`, a *different* image whose prompt contains `000028`'s verbatim. That is
+  legitimate retrieval success which also happens at inference (the train split contains
+  near-duplicate prompt clusters), and filtering it would make training inputs
+  systematically weaker than production. So the guard now checks **identity, not string
+  containment**, and containment is recorded instead as a statistic:
+  **16/700 rows (2.3%)** — a useful ceiling on what a copy-only strategy could achieve when
+  interpreting 5.3's component F1. That the task requires synthesis rather than copying for
+  97.7% of rows is itself a result worth reporting.
+- **Acted on the 1.3 audit.** Targets keep only lexicon-recognised modifiers
+  (**1459 of 3063 entries, 47.6%**), since `modifiers` measured 0.26 precision and is the
+  sink for unclassified segments. `modifiers_raw` is retained per row so Task 8.2 can ablate
+  the choice. Captions use 5.1's `strip_caption_boilerplate()` — this is that documented
+  opt-in point — affecting **576/700 rows (82%)**, with `caption_raw` also retained.
+- **PEZ coverage 100%**, but it took a corrected measurement to get there. Kajal's PEZ output
+  lives in gitignored `data/`, so it did not exist on this machine. My first throughput
+  measurement said ~63 s/image (**~9.8 h** for the train split) — taken while captioning was
+  saturating ~9 cores. Uncontended it is **7.8 s/image at batch 40**, and the full 700-image
+  run took **121 min**, yielding mean CLIP-score **0.3000** against Kajal's 20-image
+  benchmark of 0.2964 — confirming the larger batch is equivalent (the loss is
+  batch-meaned, but Adam's update is invariant to a constant gradient scale and the
+  per-image soft tokens are independent). `scripts/run_pez_for_sft.py` is resumable and
+  writes to its own file, leaving her Task 4.1 artifact and the eval harness's assertions
+  untouched.
+- **Retrieval quality, for Task 6.2's benefit:** top-1 similarity after self-exclusion
+  averages **0.8034** (min 0.4730, max 0.9955), but the **top1−top2 margin averages only
+  0.0311** — candidates cluster very tightly, which matters for how much weight the
+  retrieval-margin term can carry in the confidence formula.
+- Tests: 37 added (`ml/tests/test_sft.py`), including adversarial cases for both leakage
+  modes. **ml suite now 104/104, server 9/9.**
+- Results: `docs/results/decomp_sft.md`
+
+### Task 5.3 — LoRA Fine-Tune *(Navya)* — Sync Point 2 deliverable
+Fine-tuned a decomposition model with PEFT/LoRA on the 560-row SFT set from Task 5.2.
+
+- **Adapter:** `ml/models/decomposer-lora` (3.6 MB, committed to the repo rather than left
+  in gitignored `data/`, so Kajal can pick it up directly for the eval harness).
+- **Both done-conditions pass:**
+
+  | Requirement | Result | Status |
+  |---|---|---|
+  | Schema-valid JSON on >98% of val inputs | **100.0%** (70/70) | PASS |
+  | Beats zero-shot control on component F1 | **0.1248** vs 0.0000 | PASS |
+
+- **Base model — the roadmap's 7B is impossible here, and the first substitute was worse
+  than impossible.** bitsandbytes 4-bit is CUDA-only, so 7B needs ~14 GB at bf16 against
+  ~9 GB free. I first chose `flan-t5-base`, which was wrong for a reason worth recording:
+  **T5 cannot emit JSON at all** — `{` and `}` are absent from its SentencePiece vocabulary
+  (both map to `<unk>`), because T5's C4 preprocessing stripped curly braces. Every SFT
+  target was silently tokenized with `<unk>` where braces belong. A 30-minute overfit run
+  confirmed 0% schema validity as a *hard ceiling*, not undertraining. There is now a
+  regression test asserting the base tokenizer round-trips `{`/`}`.
+- **Final base: `HuggingFaceTB/SmolLM2-135M-Instruct`**, LoRA r=16 on `q_proj`/`v_proj` —
+  **0.92M trainable / 135.4M (0.68%)**. Lighter *and* faster than the flan-t5-base it
+  replaced (4.3 vs 7.2 s/example), byte-level BPE so braces round-trip, instruction-tuned,
+  and decoder-only (which is what `outlines` targets, de-risking 5.4).
+- **Training:** 5 epochs, batch 4 × grad-accum 4, lr 1e-3 linear decay, **135 min on CPU**.
+  Val loss **2.18 → 1.32**, still falling at epoch 5 and never turning up, so the run was
+  budget-limited rather than overfitting. Best-val checkpointing throughout.
+- **The honest reading, which the report states rather than stopping at "PASS":** the model
+  learned the **output contract**, not the **mapping**. 100% schema validity is real and
+  useful. But headline macro F1 is 0.1248, and the per-field pattern shows majority-class
+  collapse: `style` F1 0.000 with 87% correct abstention, `tone` F1 0.000 with 93%
+  abstention. `style` is absent from 76% of targets and `tone` from 87%, so predicting
+  `null` is a strong strategy that earns nothing in F1. Best field is `lighting` (0.286 —
+  small closed vocabulary); `subject` is 0.196.
+- **Both controls score 0.0 F1, and that is a limitation, not a triumph.** I added a
+  few-shot control (same weights, no training, shown two format demonstrations)
+  specifically to separate *format learning* from *task learning*. It scored 0.0% valid —
+  worse than the strict zero-shot control's 2.9%, because a longer prompt gives a 135M
+  model more to lose track of. So at this scale the two cannot be separated: the fine-tune
+  is what makes the model able to attempt the task at all. That belongs in the write-up as
+  a stated limitation of the comparison.
+- **Component F1 metric implemented** (`ml/app/component_eval.py`) — the piece Kajal's Task
+  4.3 harness explicitly left pending on my Task 1.3 labels. Standalone and importable, so
+  4.3/8.1 can call it directly. Token-level F1 for string fields (exact match is too
+  brittle for this corpus), set overlap for list fields, and explicit null handling so
+  "correctly saying nothing" is tracked separately from precision.
+- **Recommended next steps before 8.1**, cheapest first: re-weight the loss away from
+  `null` (addresses the clearest failure mode without more data or compute); step up to
+  SmolLM2-360M (~6 h — both controls at 0.0 suggest capacity really is binding); raise LoRA
+  rank above r=16.
+- Tests: 36 added (18 `test_component_eval.py`, 18 `test_decompose.py`). **ml suite now
+  140/140.**
+- Results: `docs/results/train_decomposer.md`, `docs/results/decomposer_eval.md`
+
 ---
 
 ## 6. Summary of Scope Decisions (for the report/viva)
@@ -241,11 +350,13 @@ All driven by the same root cause: **CPU-only hardware, limited storage, limited
 | PEZ iterations | Few hundred–thousands (paper) | 100 | CPU constraint; batched for efficiency |
 | Weak-label LLM seed set | 5–10K LLM-labeled prompts | none (hook built, unused) | Seed set would exceed the 700-prompt corpus; no LLM credentials in this env |
 | Captioning model | BLIP-2, or LLaVA-1.5-7B if VRAM allows | BLIP-1 large (~470M) | BLIP-2 needs ~7.5GB bf16 / ~15GB fp32 vs ~6.3GB available, CPU-only; env-swappable, no code change needed on a GPU box |
+| Decomposer base model | Mistral-7B-Instruct / Llama-3-8B, 4-bit | SmolLM2-135M-Instruct + LoRA r=16 | bitsandbytes 4-bit is CUDA-only, 7B needs ~14GB bf16 vs ~9GB free; flan-t5-base tried first but T5 cannot emit `{`/`}` at all |
 
 ## 7. What's Next
 
 - **Kajal:** nothing required until Navya delivers — all work through Sync Point 2 is done. Two things worth a reply, though: (a) confirm the data-provenance question in §9, and (b) note that `negative_constraints` should come out of the component-F1 headline in 4.3/8.1.
-- **Navya:** Tasks 1.3 and 5.1 done. **Next up: 5.2 (decomposition SFT dataset)** — every input it needs now exists: weak-labeled structured targets (1.3), captions (5.1), retrieved candidates (Kajal's 2.4) and PEZ output (her 4.1). Then 5.3 (LoRA fine-tune), which is the Sync Point 2 deliverable.
+- **Navya:** Tasks 1.3, 5.1, 5.2 and 5.3 done. **Next up: 5.4 (constrained decoding + fallback)**, then 5.5 (wire into the pipeline). 5.4 is lower-risk than expected now — the adapter already emits schema-valid JSON on 100% of val rows, so constrained decoding is a safety net rather than a necessity, and the base is decoder-only, which is what `outlines` supports.
+- **Kajal:** the adapter is ready at `ml/models/decomposer-lora` (3.6 MB, in-repo). `ml/app/component_eval.py` fills the component-F1 gap your 4.3 harness left pending on my weak labels — import `score_predictions()` directly. Two things to know before 8.1: component F1 is currently **0.1248** (the model learned the output format, not the field mapping — see `docs/results/decomposer_eval.md` for the majority-class analysis), and `negative_constraints` should stay out of the headline macro at 4/700 support.
 - **Sync Point 2 (Model Handoff):** Navya delivers her trained LoRA decomposition model; Kajal wires it into the evaluation harness (already built) for real, final metrics.
 
 ## 8. Key Files Reference
@@ -255,11 +366,15 @@ All driven by the same root cause: **CPU-only hardware, limited storage, limited
 | Sync 1 technical handoff | `docs/sync1-handover.md` |
 | Weak-label quality + audit | `docs/label-quality.md` |
 | Captioning results + model rationale | `docs/results/captioning.md` |
+| Decomposition SFT dataset | `docs/results/decomp_sft.md` |
+| Decomposer training curve | `docs/results/train_decomposer.md` |
+| Decomposer evaluation + limitations | `docs/results/decomposer_eval.md` |
+| Trained LoRA adapter (Sync Point 2) | `ml/models/decomposer-lora/` |
 | API contract (frozen) | `docs/api-contract.md` |
 | PEZ baseline results | `docs/results/pez_baseline.md` |
 | CLIP-tag baseline results | `docs/results/cliptag_baseline.md` |
 | Combined evaluation | `docs/results/baselines.md`, `.csv` |
-| All `make` commands | `Makefile` (targets: `ingest`, `split`, `bench-embed`, `build-index`, `seed`, `pez-baseline`, `cliptag-baseline`, `eval`, `ingest-alpaca`, `split-alpaca`, `weak-label`, `audit-labels`, `caption`) |
+| All `make` commands | `Makefile` (targets: `ingest`, `split`, `bench-embed`, `build-index`, `seed`, `pez-baseline`, `cliptag-baseline`, `eval`, `ingest-alpaca`, `split-alpaca`, `weak-label`, `audit-labels`, `caption`, `decomp-sft`, `pez-sft`, `train-decomposer`, `eval-decomposer`) |
 
 ---
 

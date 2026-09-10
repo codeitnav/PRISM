@@ -8,10 +8,10 @@ router = APIRouter()
 
 
 class CaptionResponse(BaseModel):
-    """Not part of the frozen API contract (docs/api-contract.md) - this is an
-    internal stage endpoint, like /internal/retrieve. The caption reaches the
-    public Reconstruction object only indirectly, as one of the decomposer's
-    inputs in Task 5.2.
+    """Response body for the internal captioning endpoint.
+
+    Not part of the public API contract; the caption reaches the public
+    Reconstruction object only indirectly, as a decomposer input.
     """
 
     caption: str
@@ -26,9 +26,9 @@ async def caption(image: UploadFile = File(...)) -> dict:
     try:
         return {"caption": caption_images([image_bytes])[0], "model": CAPTION_MODEL}
     except UnidentifiedImageError:
-        # Bad input, not a broken service - 503 would tell the caller to retry,
-        # and the backend's orchestration (Task 3.1) treats 5xx as transient.
+        # Malformed input, not a service failure: 5xx would signal the caller
+        # to retry a request that can never succeed.
         raise HTTPException(status_code=422, detail="upload is not a decodable image")
     except Exception as e:
-        # Genuinely unavailable: model download/load failure, OOM.
+        # Genuinely unavailable: model load failure, out of memory.
         raise HTTPException(status_code=503, detail=f"captioning unavailable: {e}")

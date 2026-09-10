@@ -1,29 +1,20 @@
 #!/usr/bin/env python3
-"""Task 5.1 - generate and persist captions for the dataset splits.
-
-Captions the test split by default (the roadmap's done-condition), or any
-split(s) you name. Task 5.2's SFT dataset is built from the train split, so
-that run is `--splits train val test`.
+"""Generate and persist captions for dataset splits.
 
 Outputs:
-    data/captions/captions.parquet   - id, image_path, caption, model, prompt
-                                       (the true prompt is carried along so
-                                       5.2 can join without re-reading
-                                       pairs.parquet, and so the report below
-                                       can show caption vs. prompt side by
-                                       side)
-    data/results/captioning.md       - throughput + a readable sample of
-                                       caption-vs-true-prompt pairs
-    (copy the .md into docs/results/ afterward - docs/ is mounted read-only
-    in the ml container, see docker-compose.yml)
+    data/captions/captions.parquet   id, image_path, caption, model, prompt
+    data/results/captioning.md       throughput and a sample of caption/prompt pairs
 
-Re-running is cheap: app.caption caches by image content hash, so only
-newly-added images cost model time. The parquet is merged, not overwritten,
-so captioning `test` and later `train` accumulates rather than replacing.
+The true prompt is carried alongside each caption so downstream joins do not
+need to re-read pairs.parquet, and so the report can show the two side by side.
 
-Usage (inside the ml container):
-    docker compose run --rm ml python -m scripts.run_captioning
-    docker compose run --rm ml python -m scripts.run_captioning --splits train val test
+Re-running is cheap: app.caption caches by image content hash, so only new
+images cost model time. The parquet is merged rather than overwritten, so
+captioning additional splits accumulates.
+
+Usage:
+    python -m scripts.run_captioning
+    python -m scripts.run_captioning --splits train val test
 """
 
 from __future__ import annotations

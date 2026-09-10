@@ -1,10 +1,10 @@
-"""Task 5.1 - tests for the captioning stage.
+"""Tests for the captioning stage.
 
-The model itself is ~1.9GB, so these tests exercise the parts that carry the
-real risk of silent breakage - cache keying, batching, order preservation,
-architecture dispatch - against a stub model, and keep exactly one test that
-loads the real checkpoint (marked slow-ish but kept, because a broken
-processor/generate call would otherwise only surface during a long batch run).
+The model is large enough that loading it per test would be prohibitive, so
+the parts that fail silently - cache keying, batching, order preservation,
+architecture dispatch - are exercised against a stub. One test loads the real
+checkpoint, since a broken processor or generate call would otherwise surface
+only part-way through a long batch run.
 """
 
 from io import BytesIO
@@ -255,7 +255,7 @@ class TestCaptionEndpoint:
         assert client.post("/internal/caption").status_code == 422
 
     def test_undecodable_image_is_422_not_503(self, client):
-        """Bad input must not look transient - the backend (Task 3.1) retries 5xx."""
+        """Malformed input must not look transient: callers retry on 5xx."""
         r = client.post("/internal/caption", files={"image": ("x.png", b"not-an-image")})
         assert r.status_code == 422
         assert "decodable" in r.json()["detail"]

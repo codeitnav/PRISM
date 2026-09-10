@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
-"""Task 1.3 - apply weak structured labels to the ingested corpus.
+"""Apply weak structured labels to the ingested corpus.
 
-Reads every raw prompt from data/diffusiondb/pairs.parquet, runs the rule +
-lexicon pass in app.weak_label, and produces two outputs:
+Reads every raw prompt from data/diffusiondb/pairs.parquet, runs the rule and
+lexicon pass in app.weak_label, and produces:
 
-1. data/diffusiondb/pairs_labeled.parquet - all 700 pairs (train/val/test,
-   per the Sync-1 handover) with the structured fields flattened into
-   columns, for the decomposition SFT dataset (Task 5.2) and component-wise
-   eval (Task 4.3).
-2. An in-place update of MongoDB's `reference_prompts` documents, filling
-   the `structured_fields` field that scripts/seed_mongo.py left as null.
-   Uses update_one($set) per document so seed_mongo's `faiss_id` survives -
-   deleting and reinserting would wipe it and break retrieval.
+  1. data/diffusiondb/pairs_labeled.parquet - all pairs with the structured
+     fields flattened into columns, for training and component-wise scoring.
+  2. An in-place update of the `structured_fields` field on the MongoDB
+     `reference_prompts` documents. Uses update_one($set) per document so that
+     the `faiss_id` written during seeding survives; delete-and-reinsert would
+     drop it and break retrieval.
 
-Also prints the coverage stats and the top corpus-frequency segments that no
-lexicon classifies, which is the feedback loop for extending the lexicons.
+Also prints coverage statistics and the most frequent unclassified segments,
+which is the feedback loop for extending the lexicons.
 
-Usage (inside the ml container):
-    docker compose run --rm ml python -m scripts.run_weak_label
-    docker compose run --rm ml python -m scripts.run_weak_label --no-mongo
+Usage:
+    python -m scripts.run_weak_label
+    python -m scripts.run_weak_label --no-mongo
 """
 
 from __future__ import annotations

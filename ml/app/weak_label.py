@@ -1,44 +1,31 @@
-"""Task 1.3 - weak structured labels.
+"""Rule-based extraction of structured fields from raw prompts.
 
-Parses a raw DiffusionDB prompt into the StructuredFields schema
-(subject/style/medium/lighting/modifiers/tone/negative_constraints) using a
-rule + lexicon pass. These are *weak* labels: cheap, noisy, and generated
-without human annotation. They exist to serve as supervision targets for the
-decomposition model (Task 5.2/5.3) and as the ground truth for the eval
-harness's component-wise precision/recall (Task 4.3's missing piece).
+Parses a prompt into the StructuredFields schema using segmentation plus
+curated lexicons. The output is intentionally weak supervision: cheap and
+noisy, produced without human annotation, for use as model training targets
+and as the reference for component-wise scoring. Measured per-field precision
+is recorded in docs/label-quality.md.
 
-How the rule pass works:
+How a prompt is parsed:
 
-1. Split the prompt on the separators DiffusionDB prompts actually use -
-   commas, sentence periods, and the "|" / "::" weighting syntax that leaks in
-   from Midjourney and AUTOMATIC1111 users.
-2. Strip prompt-engineering noise from each segment: attention weights
-   ("(detailed:1.3)"), artist-credit boilerplate, trailing weight numbers.
-3. Classify each segment against curated lexicons. A segment matches a
-   category when a lexicon phrase appears in it as a whole word/phrase; the
-   longest matching phrase wins, so "soft volumetric lighting" beats "soft".
-4. Whatever is left unclassified becomes the subject - the first unmatched
-   segment is the primary subject, later ones fold into modifiers. Segments
-   that match nothing but look like quality boilerplate ("8k", "trending on
-   artstation") are routed to modifiers by a separate boilerplate lexicon.
-5. Negative constraints come from explicit negative syntax: a leading "no "/
-   "without ", or AUTOMATIC1111's "--neg"/"negative prompt:" markers.
+ 1. Split on the separators these prompts actually use - commas, sentence
+    periods, and the "|" / "::" weighting syntax from Midjourney and
+    AUTOMATIC1111.
+ 2. Strip prompt-engineering noise: attention weights ("(detailed:1.3)"),
+    bracket emphasis, trailing CLI flags, and artist-credit prefixes.
+ 3. Classify each segment against the lexicons below, longest phrase first.
+ 4. Assign in two passes - explicitly tagged segments claim the single-slot
+    fields first, then phrases found inside longer content-bearing segments
+    backfill whatever remains empty.
+ 5. Take negative constraints from explicit negative syntax: a leading "no" /
+    "without", or the "--neg" / "negative prompt:" markers.
 
-The lexicons are seeded by hand and then *extended from corpus frequency*
-via mine_lexicon_candidates(), which surfaces the highest-frequency
-unclassified segments in the actual ingested corpus so the vocabulary is
-grounded in this dataset rather than in generic art vocabulary.
+The lexicons are curated by hand and extended from corpus frequency via
+mine_lexicon_candidates(), which surfaces the most common segments no lexicon
+classifies.
 
-Scope note - LLM seed labels: the roadmap pairs this rule pass with an
-LLM-labeled seed set of 5-10K prompts for the ambiguous cases. Two things
-make that inapplicable as written here: the ingested corpus is 700 prompts
-total (see scripts/ingest_diffusiondb.py's scope note), so a 5-10K seed set
-is larger than the dataset, and this dev environment has no LLM API
-credentials configured. The hook is built and wired instead of faked:
-load_llm_seed_labels() reads data/diffusiondb/llm_seed_labels.jsonl if it
-exists and those labels override the rule output per prompt, so a seed set
-can be dropped in later without touching the pipeline. The audit in
-docs/label-quality.md reports rule-pass-only precision.
+An optional LLM-labelled seed set can override the rule output per prompt via
+load_llm_seed_labels(); it is absent by default, so labels are rule-derived.
 """
 
 from __future__ import annotations
@@ -53,8 +40,8 @@ from app.schemas.structured_fields import StructuredFields
 
 # --- Lexicons -------------------------------------------------------------
 #
-# Ordered longest-phrase-first at match time, not here, so these stay
-# readable/appendable. Entries are lowercase; matching is case-insensitive.
+# Entries are lowercase and matching is case-insensitive. Ordering by phrase
+# length happens at match time, so these lists stay readable and appendable.
 
 STYLE_LEXICON = [
     "studio ghibli", "art nouveau", "art deco", "ukiyo-e", "vaporwave",
@@ -71,7 +58,7 @@ STYLE_LEXICON = [
     "film noir", "cottagecore", "kawaii", "chibi", "pixel art", "voxel art",
     "vector art", "fauvism", "pointillism", "trompe l'oeil", "vintage",
     "retro", "art brut", "naive art", "folk art", "tribal", "baroque punk",
-    # Promoted from corpus-frequency mining on the ingested 700 prompts:
+    # Added from corpus-frequency mining:
     "fantasy", "hyper realism", "realism", "fine art", "digital fantasy",
     "traditional drawing style", "warframe", "dark souls", "studio trigger",
 ]
@@ -94,7 +81,7 @@ MEDIUM_LEXICON = [
     "aerial photograph", "drone photograph", "long exposure", "tilt shift",
     "cinematography", "film still", "movie still", "screenshot", "line art",
     "lineart", "storyboard", "blueprint", "technical drawing", "cross stitch",
-    # Promoted from corpus-frequency mining on the ingested 700 prompts:
+    # Added from corpus-frequency mining:
     "illustration", "oil pastels", "oil pastel", "textured canvas",
     "digital illustration", "3d model", "photo manipulation",
 ]
@@ -115,7 +102,7 @@ LIGHTING_LEXICON = [
     "underlighting", "moody lighting", "atmospheric lighting", "hazy light",
     "dappled light", "caustics", "light rays", "sunbeams", "dim lighting",
     "high contrast lighting", "flat lighting", "twilight", "dusk", "dawn",
-    # Promoted from corpus-frequency mining on the ingested 700 prompts:
+    # Added from corpus-frequency mining:
     "dynamic lighting", "radiant light", "radiant lighting", "hdr",
     "global illumination", "soft shadows", "long shadows", "glow",
 ]
@@ -132,11 +119,12 @@ TONE_LEXICON = [
     "energetic", "chaotic", "frenetic", "romantic", "intimate", "tender",
     "lonely", "solitary", "hopeful", "optimistic", "surreal and dreamy",
     "cozy", "warm", "cold", "clinical", "sterile", "opulent", "decadent",
-    # Promoted from corpus-frequency mining on the ingested 700 prompts:
+    # Added from corpus-frequency mining:
     "stunning", "gorgeous", "haunting", "serene and peaceful", "savage",
 ]
 
-# Quality/detail boilerplate: matches nothing semantic, belongs in modifiers.
+# Quality and detail boilerplate: carries no semantic field, so it goes to
+# modifiers.
 MODIFIER_LEXICON = [
     "highly detailed", "high detail", "extremely detailed", "ultra detailed",
     "intricate details", "intricate", "finely detailed", "detailed",
@@ -156,7 +144,7 @@ MODIFIER_LEXICON = [
     "vivid colors", "vivid colours", "muted colors", "muted colours",
     "pastel colors", "pastel colours", "monochrome", "black and white",
     "sepia", "grainy", "film grain", "chromatic aberration", "vignette",
-    # Promoted from corpus-frequency mining on the ingested 700 prompts:
+    # Added from corpus-frequency mining:
     "pixiv", "art station", "trending on art station", "ultra detail",
     "fine details", "fine detail", "perfect symmetry", "strong line",
     "strong lines", "pbr", "seamless", "cinematic", "beautiful", "raw",
@@ -172,9 +160,9 @@ LEXICONS: dict[str, list[str]] = {
     "modifiers": MODIFIER_LEXICON,
 }
 
-# Single-slot fields, in the priority order used when one segment matches
-# more than one lexicon (e.g. "oil painting" is both a style and a medium
-# phrase - medium is the more specific claim, so it wins).
+# Single-slot fields in priority order, used when a segment matches more than
+# one lexicon. "oil painting" is both a style and a medium phrase; medium is
+# the more specific claim.
 _SINGLE_SLOT_PRIORITY = ["medium", "lighting", "style", "tone"]
 
 # --- Segment cleaning -----------------------------------------------------
@@ -186,7 +174,7 @@ _SINGLE_SLOT_PRIORITY = ["medium", "lighting", "style", "tone"]
 # follows a single-character token, which keeps decimal weights and lens specs
 # ("f 1. 8") and initials in artist credits ("j. c. leyendecker") intact.
 _SEGMENT_SPLIT_RE = re.compile(r"[,;\n]|\|{1,2}|::|(?<!\b\w)(?<!\d)\.(?=\s|$)")
-# "(masterpiece:1.4)", "[blurry]", "{{detailed}}" - weight/emphasis syntax.
+# Weight and emphasis syntax: "(masterpiece:1.4)", "[blurry]", "{{detailed}}".
 _WEIGHT_SUFFIX_RE = re.compile(r":\s*-?\d+(?:\.\d+)?\s*$")
 _BRACKET_RE = re.compile(r"[()\[\]{}<>]")
 _ARTIST_CREDIT_RE = re.compile(r"^(?:art\s+)?by\s+", re.IGNORECASE)
@@ -199,12 +187,11 @@ _TRAILING_ARGS_RE = re.compile(r"--\w+(?:\s+[\w.:]+)?")
 _NUMERIC_ONLY_RE = re.compile(r"^-?\d+(?:\.\d+)?$")
 _WORD_RE = re.compile(r"\w")
 
-# DiffusionDB prompts in the 2m_random_* configs are stored detokenized, which
-# inserts spaces inside short alphanumeric tokens: "3 d render", "4 k", "8 k",
-# "5 0 mm", "art station". Corpus-frequency mining surfaced these as the single
-# largest source of missed lexicon hits (~230 across 700 prompts), so matching
-# runs against a re-joined form. Only matching is normalized - the value stored
-# in the labels stays the original segment text.
+# Prompts in this corpus are stored detokenized, which inserts spaces inside
+# short alphanumeric tokens: "3 d render", "4 k", "5 0 mm", "art station".
+# This was the largest single source of missed lexicon hits, so matching runs
+# against a re-joined form. Only matching is normalized; stored labels keep
+# the original segment text.
 _DIGIT_LETTER_RE = re.compile(r"\b(\d) (?=[a-z]\b)")
 _DIGIT_DIGIT_RE = re.compile(r"\b(\d) (?=\d\b)")
 # No leading \b here: after "5 0" is joined to "50", the trailing digit is
@@ -214,7 +201,7 @@ _ART_STATION_RE = re.compile(r"\bart station\b", re.IGNORECASE)
 
 
 def normalize_for_match(text: str) -> str:
-    """Re-join DiffusionDB's detokenized spacing so lexicons can match."""
+    """Re-join detokenized spacing so lexicons can match."""
     out = _ART_STATION_RE.sub("artstation", text)
     for _ in range(3):  # "5 0 0 mm" needs more than one pass
         out = _DIGIT_DIGIT_RE.sub(r"\1", out)
@@ -225,7 +212,7 @@ _WS_RE = re.compile(r"\s+")
 
 
 def clean_segment(segment: str) -> str:
-    """Strip weight syntax, brackets and credit boilerplate from a segment."""
+    """Strip weight syntax, brackets and credit prefixes from a segment."""
     text = _BRACKET_RE.sub(" ", segment)
     text = _WEIGHT_SUFFIX_RE.sub("", text)
     text = _TRAILING_ARGS_RE.sub(" ", text)
@@ -235,10 +222,9 @@ def clean_segment(segment: str) -> str:
 
 
 def split_prompt(prompt: str) -> tuple[list[str], list[str]]:
-    """Split a raw prompt into (positive segments, negative segments).
+    """Split a prompt into (positive segments, negative segments).
 
-    Text after an explicit negative marker ("--neg", "negative prompt:") is
-    treated as negative; everything before it is positive.
+    Text following an explicit negative marker is treated as negative.
     """
     positive_text, negative_text = prompt, ""
     match = _NEGATIVE_BLOCK_RE.search(prompt)
@@ -251,8 +237,8 @@ def split_prompt(prompt: str) -> tuple[list[str], list[str]]:
 
     positives, negatives = [], []
     for segment in segments_of(positive_text):
-        # An inline "no X" / "without X" segment is a negative constraint even
-        # without an explicit negative-prompt marker.
+        # An inline "no X" / "without X" segment is a negative constraint
+        # even without an explicit marker.
         stripped = _NEGATIVE_PREFIX_RE.sub("", segment)
         if stripped != segment and stripped:
             negatives.append(stripped)
@@ -268,8 +254,8 @@ def _phrase_pattern(phrase: str) -> re.Pattern[str]:
     return re.compile(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", re.IGNORECASE)
 
 
-# Compiled once at import; each category's phrases are ordered longest-first
-# so the most specific phrase in a segment is the one that matches.
+# Compiled once at import, longest phrase first so the most specific match
+# in a segment wins.
 _COMPILED_LEXICONS: dict[str, list[tuple[str, re.Pattern[str]]]] = {
     category: [
         (phrase, _phrase_pattern(phrase))
@@ -280,7 +266,7 @@ _COMPILED_LEXICONS: dict[str, list[tuple[str, re.Pattern[str]]]] = {
 
 
 def match_segment(segment: str) -> dict[str, str]:
-    """Return {category: matched phrase} for every lexicon hitting `segment`."""
+    """Return {category: matched phrase} for every lexicon matching `segment`."""
     normalized = normalize_for_match(segment)
     matches: dict[str, str] = {}
     for category, phrases in _COMPILED_LEXICONS.items():
@@ -292,11 +278,11 @@ def match_segment(segment: str) -> dict[str, str]:
 
 
 def _looks_like_subject(segment: str, matches: dict[str, str]) -> bool:
-    """True when a segment carries content beyond the phrases that matched.
+    """Whether a segment carries content beyond the phrases that matched.
 
-    "cyberpunk" is pure style; "a cyberpunk street market at night" matched
-    style too, but it is clearly the subject. Distinguish them by how much
-    of the segment the matched phrase actually covers.
+    "cyberpunk" is pure style, while "a cyberpunk street market at night" is a
+    subject that happens to mention one. They are distinguished by how much of
+    the segment the matched phrase covers.
     """
     if not matches:
         return True
@@ -307,17 +293,14 @@ def _looks_like_subject(segment: str, matches: dict[str, str]) -> bool:
 # --- Main entry point -----------------------------------------------------
 
 def weak_label(prompt: str) -> StructuredFields:
-    """Parse one raw prompt into weak StructuredFields via the rule pass.
+    """Parse one prompt into StructuredFields.
 
-    Two passes, because an explicitly-tagged segment is a stronger signal
-    than a phrase merely mentioned inside the subject:
-
-      Pass 1 fills the single-slot fields from short, lexicon-dominated
-      segments ("oil painting", "cinematic lighting") and collects the
-      long content-bearing segments as subject/modifier candidates.
-      Pass 2 backfills whichever single slots are *still* empty from
-      phrases matched inside those long segments, so "hyperrealistic
-      photograph of an astronaut" can still yield style=hyperrealistic.
+    Two passes, because an explicitly tagged segment is a stronger signal than
+    a phrase merely mentioned inside the subject. The first fills single-slot
+    fields from short lexicon-dominated segments and collects longer
+    content-bearing segments as subject and modifier candidates; the second
+    backfills any still-empty slot from phrases found inside those longer
+    segments.
     """
     positives, negatives = split_prompt(prompt)
 
@@ -327,22 +310,21 @@ def weak_label(prompt: str) -> StructuredFields:
     # (segment, matches) for the long segments deferred to pass 2.
     deferred: list[tuple[str, dict[str, str]]] = []
 
-    # --- Pass 1: explicit tags win ---
+    # Pass 1: explicitly tagged segments claim slots first.
     for segment in positives:
         if _NUMERIC_ONLY_RE.match(segment):
-            continue  # leftover weight value from "::"/"|" syntax
+            continue  # leftover weight value from "::" / "|" syntax
         matches = match_segment(segment)
 
         if _looks_like_subject(segment, matches):
-            # Long, content-bearing segment: first one is the subject, the
-            # rest are extra descriptive detail -> modifiers. Its matched
-            # phrases are held back for pass 2.
+            # The first content-bearing segment is the subject; later ones
+            # are descriptive detail. Matched phrases are held for pass 2.
             (subject_parts if not subject_parts else modifiers).append(segment)
             if matches:
                 deferred.append((segment, matches))
             continue
 
-        # Short, lexicon-dominated segment: file it under its best free slot.
+        # Short, lexicon-dominated segment: assign to its best free slot.
         assigned = False
         for category in _SINGLE_SLOT_PRIORITY:
             if category in matches and fields[category] is None:
@@ -356,20 +338,18 @@ def weak_label(prompt: str) -> StructuredFields:
         else:
             (subject_parts if not subject_parts else modifiers).append(segment)
 
-    # --- Pass 2: backfill still-empty slots from the long segments ---
+    # Pass 2: backfill remaining slots from content-bearing segments.
     for _segment, matches in deferred:
         for category, phrase in matches.items():
             if category in fields and fields[category] is None:
                 fields[category] = phrase
 
-    # Every prompt must yield a non-empty subject (schema requires it). If the
-    # prompt was nothing but style/quality tags, fall back to the whole
-    # cleaned prompt rather than dropping the record. A prompt with no
-    # word-bearing content at all (empty, punctuation-only, or nothing but a
-    # negative block) gets an empty subject and so fails schema validation -
-    # deliberately loud, since silently emitting a junk subject would poison
-    # the SFT targets in Task 5.2. The ingest filter's >=3-token rule means
-    # this should never fire on real corpus rows.
+    # The schema requires a non-empty subject. A prompt of nothing but
+    # style or quality tags falls back to the whole cleaned prompt. One with
+    # no word-bearing content at all yields an empty subject and so fails
+    # validation - deliberately loud, since a junk subject would silently
+    # corrupt training targets. Ingest filtering makes this unreachable for
+    # real corpus rows.
     subject = subject_parts[0] if subject_parts else clean_segment(prompt)
     if not _WORD_RE.search(subject):
         subject = ""
@@ -386,7 +366,7 @@ def weak_label(prompt: str) -> StructuredFields:
 
 
 def _dedupe(values: Iterable[str]) -> list[str]:
-    """Order-preserving, case-insensitive dedupe."""
+    """Deduplicate case-insensitively, preserving order."""
     seen, out = set(), []
     for value in values:
         key = value.lower()
@@ -399,11 +379,10 @@ def _dedupe(values: Iterable[str]) -> list[str]:
 # --- LLM seed-label override ---------------------------------------------
 
 def load_llm_seed_labels(path: Path) -> dict[str, dict]:
-    """Load optional LLM-labeled seed labels keyed by dataset id.
+    """Load optional LLM-labelled seed labels keyed by dataset id.
 
-    Format: JSONL, one {"id": "000002", "structured_fields": {...}} per line.
-    Absent file -> empty mapping, which is the current state (see the module
-    docstring's scope note).
+    Expects JSONL with one {"id": ..., "structured_fields": {...}} per line.
+    A missing file yields an empty mapping.
     """
     if not path.exists():
         return {}
@@ -419,7 +398,7 @@ def load_llm_seed_labels(path: Path) -> dict[str, dict]:
 
 
 def weak_label_row(prompt: str, dataset_id: str, seeds: dict[str, dict]) -> tuple[StructuredFields, str]:
-    """Label one row, preferring an LLM seed label when one exists.
+    """Label one row, preferring a seed label when one exists.
 
     Returns (fields, provenance) where provenance is "llm_seed" or "rule".
     """
@@ -431,12 +410,11 @@ def weak_label_row(prompt: str, dataset_id: str, seeds: dict[str, dict]) -> tupl
 # --- Corpus frequency mining ---------------------------------------------
 
 def mine_lexicon_candidates(prompts: Iterable[str], top_n: int = 40) -> list[tuple[str, int]]:
-    """Most frequent short segments that no lexicon currently classifies.
+    """Most frequent short segments that no lexicon classifies.
 
-    This is the "vocabularies mined from corpus frequency" half of Task 1.3:
-    run it over the ingested corpus, read the output, and promote genuine
-    style/medium/lighting terms into the lexicons above. Restricted to short
-    segments because long ones are subjects, not vocabulary.
+    Run over the corpus to find vocabulary worth promoting into the lexicons
+    above. Restricted to short segments, since long ones are subjects rather
+    than vocabulary.
     """
     counter: Counter[str] = Counter()
     for prompt in prompts:

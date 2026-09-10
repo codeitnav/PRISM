@@ -1,4 +1,4 @@
-.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index pez-baseline cliptag-baseline eval ingest-alpaca split-alpaca weak-label audit-labels caption
+.PHONY: up down build restart logs ps seed test clean init-env ingest split bench-embed build-index pez-baseline cliptag-baseline eval ingest-alpaca split-alpaca weak-label audit-labels caption decomp-sft pez-sft train-decomposer eval-decomposer
 
 COMPOSE := docker compose
 
@@ -77,6 +77,28 @@ audit-labels: init-env
 ## Add SPLITS="train val test" to caption more (5.2 needs the train split).
 caption: init-env
 	$(COMPOSE) run --rm ml python -m scripts.run_captioning $(if $(SPLITS),--splits $(SPLITS),)
+
+## Task 5.2: build the decomposition SFT dataset -> data/decomp_sft.jsonl
+## (needs captions for the splits being built; see `make caption`)
+decomp-sft: init-env
+	$(COMPOSE) run --rm ml python -m scripts.build_decomp_sft $(if $(SPLITS),--splits $(SPLITS),)
+
+## Task 5.2 support: generate PEZ prompts for the SFT inputs. Measured
+## ~7.8s/image at batch 40 on this CPU (~1.5h for all 700) - but ~63s/image if
+## something else is saturating the cores, so run it alone. Resumable: progress
+## is saved after every batch, so it is safe to interrupt and re-run.
+pez-sft: init-env
+	$(COMPOSE) run --rm ml python -m scripts.run_pez_for_sft --batch-size 40 $(if $(SPLITS),--splits $(SPLITS),)
+
+## Task 5.3: LoRA fine-tune flan-t5-base on the decomposition task.
+## ~3-4h on this CPU; saves the best-val adapter to data/models/decomposer-lora
+train-decomposer: init-env
+	$(COMPOSE) run --rm ml python -m scripts.train_decomposer
+
+## Task 5.3: check the done-condition - schema validity >98% on val, and
+## component F1 above the zero-shot control
+eval-decomposer: init-env
+	$(COMPOSE) run --rm ml python -m scripts.eval_decomposer $(if $(SPLIT),--split $(SPLIT),)
 
 ## Task 1.4: download + curate the Alpaca text subset into /data/alpaca
 ingest-alpaca: init-env

@@ -1,29 +1,22 @@
 #!/usr/bin/env python3
-"""Task 1.3 - field-level precision audit of the weak labels.
+"""Sample and score a field-level precision audit of the weak labels.
 
-The roadmap's done-condition for Task 1.3 is a *manual* audit of 100 random
-samples reporting field-level precision, logged in docs/label-quality.md.
-That number cannot be computed automatically - there is no gold standard to
-compare against, which is the whole reason the labels are called "weak". So
-this script splits the work in two:
+Precision against a weak-label set cannot be computed automatically - there is
+no gold standard to compare against, which is why the labels are called weak.
+The work is therefore split in two:
 
-    --emit    sample 100 labeled rows (deterministic seed) and write an audit
-              worksheet to data/diffusiondb/label_audit.jsonl, one row per
-              sample with every field and a blank verdict per field.
+    --emit    sample rows deterministically and write an audit worksheet with a
+              blank verdict per populated field.
+    --score   read the completed worksheet, compute field-level precision as
+              correct / (correct + wrong), and render the report.
 
-    --score   read the filled-in worksheet and compute field-level precision
-              = (# fields marked correct) / (# fields the labeler populated),
-              then render docs/label-quality.md.
+A verdict is "correct", "wrong", or "" for not yet judged. Precision is
+computed over populated fields only: a field left null is a recall miss rather
+than a precision error, and is counted separately as coverage.
 
-A verdict is one of: "correct", "wrong", or "" (not yet judged). Precision is
-computed over populated fields only - a field the labeler left null is a
-recall miss, not a precision error, and is counted separately as coverage.
-
-Usage (inside the ml container):
-    docker compose run --rm ml python -m scripts.audit_weak_labels --emit
-    # ... fill in verdicts in data/diffusiondb/label_audit.jsonl ...
-    docker compose run --rm ml python -m scripts.audit_weak_labels --score
-    cp data/results/label-quality.md docs/label-quality.md
+Usage:
+    python -m scripts.audit_weak_labels --emit
+    python -m scripts.audit_weak_labels --score
 """
 
 from __future__ import annotations
