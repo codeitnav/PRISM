@@ -32,6 +32,10 @@ test('POST /api/reconstruct returns a persisted reconstruction retrievable via G
   assert.ok(Array.isArray(postRes.body.candidates))
   assert.equal(postRes.body.candidates.length, 5)
   assert.ok(postRes.body.timings.total_ms >= 0)
+  assert.ok(postRes.body.structured_fields)
+  assert.ok(postRes.body.structured_fields.subject)
+  assert.ok(postRes.body.timings.captioning_ms >= 0)
+  assert.ok(postRes.body.timings.decomposition_ms >= 0)
 
   const getRes = await request(app).get(`/api/reconstruct/${postRes.body.id}`)
   assert.equal(getRes.status, 200)

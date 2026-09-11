@@ -1,6 +1,7 @@
-// Task 3.1 - backend orchestration for POST /api/reconstruct + GET /api/reconstruct/:id.
+// Backend orchestration for POST /api/reconstruct + GET /api/reconstruct/:id.
 // server never contains ML logic - this route uploads/stores the file, calls
-// the ml service's /internal/retrieve, persists the result, and returns it.
+// the ml service's /internal/retrieve, /internal/caption, and
+// /internal/decompose in sequence, persists the result, and returns it.
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -32,6 +33,28 @@ const ML_TIMEOUT_MS = 60_000
 
 function errorPayload(error, message) {
   return { error, message, details: null }
+}
+
+// Captioning and decomposition are an enhancement on top of retrieval, not a
+// hard requirement - a failure here degrades the response (falls back to the
+// top-1 candidate's fields, status 'degraded') rather than failing the whole
+// request, since retrieval already succeeded by the time these run.
+async function callMlServiceOrNull(endpoint, init, requestId, stepName) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), ML_TIMEOUT_MS)
+  const t0 = Date.now()
+  try {
+    const res = await fetch(`${env.mlServiceUrl}${endpoint}`, { ...init, signal: controller.signal })
+    if (!res.ok) {
+      throw new Error(`${endpoint} responded ${res.status}`)
+    }
+    return { data: await res.json(), ms: Date.now() - t0 }
+  } catch (err) {
+    console.error(`[${requestId}] ${stepName} failed, degrading:`, err.message)
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 router.post('/api/reconstruct', upload.single('image'), async (req, res) => {
@@ -71,18 +94,56 @@ router.post('/api/reconstruct', upload.single('image'), async (req, res) => {
     const candidates = await mlRes.json()
     const retrievalMs = Date.now() - t0
 
+    let status = 'completed'
+    let structuredFields = candidates[0]?.structured_fields ?? null
+    let captioningMs = null
+    let decompositionMs = null
+
+    const captionForm = new FormData()
+    captionForm.append('image', new Blob([fileBuffer], { type: req.file.mimetype }), req.file.originalname || 'upload')
+    const captionResult = await callMlServiceOrNull(
+      '/internal/caption',
+      { method: 'POST', body: captionForm },
+      requestId,
+      'captioning',
+    )
+
+    if (captionResult) {
+      captioningMs = captionResult.ms
+      const decomposeResult = await callMlServiceOrNull(
+        '/internal/decompose',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            caption: captionResult.data.caption,
+            retrieved_prompts: candidates.slice(0, 5).map((c) => c.prompt),
+            pez_prompt: null,
+          }),
+        },
+        requestId,
+        'decomposition',
+      )
+      if (decomposeResult) {
+        structuredFields = decomposeResult.data
+        decompositionMs = decomposeResult.ms
+      } else {
+        status = 'degraded'
+      }
+    } else {
+      status = 'degraded'
+    }
+
     const doc = await Reconstruction.create({
       modality: 'image',
-      status: 'completed',
+      status,
       input: {
         filename: req.file.originalname || null,
         content_type: req.file.mimetype || null,
         text: null,
         storage_path: req.file.path,
       },
-      // Placeholder per Task 3.2: results panel shows the top-1 candidate's
-      // fields until the real decomposition model (Task 5.x) is wired in.
-      structured_fields: candidates[0]?.structured_fields ?? null,
+      structured_fields: structuredFields,
       candidates,
       confidence: null,
       baselines: {},
@@ -93,6 +154,8 @@ router.post('/api/reconstruct', upload.single('image'), async (req, res) => {
         // number - retrieval_ms is the honest full-call latency.
         embedding_ms: 0,
         retrieval_ms: retrievalMs,
+        captioning_ms: captioningMs,
+        decomposition_ms: decompositionMs,
         total_ms: Date.now() - t0,
       },
       error: null,

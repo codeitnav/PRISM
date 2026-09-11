@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -219,3 +220,68 @@ def decompose_batch(
         tokenizer.padding_side = original_side
 
     return results
+
+
+# --- Reliable decoding for serving -----------------------------------------
+#
+# decompose_batch above is left unconstrained on purpose: the eval harness
+# measures its raw schema-validity rate as a done-condition metric, and a
+# safety net there would hide exactly what that metric is supposed to catch.
+# The wrapper below is what the serving pipeline calls instead - it never
+# hands the caller an unparseable result.
+
+MAX_RETRIES = 1
+
+_RETRY_SUFFIX = (
+    "\n\n(Your previous output was not valid JSON for the required schema. "
+    "Output only the JSON object, nothing else.)"
+)
+
+_CAPTION_LINE_RE = re.compile(r"Caption: (.+)")
+
+
+def _fallback_fields(input_text: str) -> StructuredFields:
+    """Deterministic, always-valid result for when even a retry fails.
+
+    Falls back to the evidence block's caption as the subject, so the
+    result is still a usable description rather than a hard failure.
+    """
+    match = _CAPTION_LINE_RE.search(input_text)
+    subject = match.group(1).strip() if match else ""
+    return StructuredFields(subject=subject or "unspecified subject")
+
+
+def decompose_reliably(
+    input_texts: list[str],
+    adapter_dir: Optional[Path] = ADAPTER_DIR,
+    max_retries: int = MAX_RETRIES,
+) -> list[StructuredFields]:
+    """Decompose evidence blocks into StructuredFields, guaranteed.
+
+    Re-prompts only the rows that failed to parse (not the whole batch),
+    up to `max_retries` times, then applies `_fallback_fields` to any that
+    still haven't parsed. Every element of the returned list is a valid
+    StructuredFields - callers never need to handle a parse failure.
+    """
+    pending = list(range(len(input_texts)))
+    current_texts = list(input_texts)
+    final: list[Optional[StructuredFields]] = [None] * len(input_texts)
+
+    for _ in range(max_retries + 1):
+        if not pending:
+            break
+        batch_texts = [current_texts[i] for i in pending]
+        results = decompose_batch(batch_texts, adapter_dir=adapter_dir)
+        still_pending = []
+        for idx, result in zip(pending, results):
+            if result.is_valid:
+                final[idx] = result.fields
+            else:
+                still_pending.append(idx)
+                current_texts[idx] = input_texts[idx] + _RETRY_SUFFIX
+        pending = still_pending
+
+    for idx in pending:
+        final[idx] = _fallback_fields(input_texts[idx])
+
+    return final

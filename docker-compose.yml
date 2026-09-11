@@ -33,6 +33,10 @@ services:
       # Desktop Windows<->WSL2 bind-mount bridge is very slow for that access
       # pattern. A named volume lives in the Linux VM's native filesystem.
       HF_HOME: /hf_cache
+      # The trained LoRA adapter is committed under ml/models (small enough
+      # for git, unlike /data) so every teammate gets it via `git pull`
+      # rather than needing to retrain or copy it into /data by hand.
+      DECOMPOSER_ADAPTER: /app/models/decomposer-lora
     ports:
       - "8000:8000"
     volumes:

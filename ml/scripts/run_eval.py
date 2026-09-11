@@ -43,10 +43,6 @@ TEST_SPLIT_PATH = DATA_DIR / "splits" / "test.json"
 DECOMP_SFT_PATH = DATA_DIR / "decomp_sft.jsonl"
 RESULTS_DIR = DATA_DIR / "results"
 
-# The trained adapter ships inside the repo (small enough to commit, unlike
-# data/), so it lives under the ml package rather than under DATA_DIR.
-DECOMPOSER_ADAPTER_DIR = Path(__file__).resolve().parent.parent / "models" / "decomposer-lora"
-
 NUM_TEST_IMAGES = 20
 
 
@@ -109,9 +105,7 @@ def _build_decomposer_reconstructor(image_ids: list[str]):
 
     def _reconstructor(target_embeddings):
         t0 = time.time()
-        decompositions = decompose_batch(
-            input_texts, use_adapter=True, adapter_dir=DECOMPOSER_ADAPTER_DIR
-        )
+        decompositions = decompose_batch(input_texts, use_adapter=True)
         prompts = [_flatten_fields(r) for r in decompositions]
 
         model, _ = get_clip_model()

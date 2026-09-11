@@ -58,11 +58,11 @@ The split isn't "backend vs. ML" — each person owns a full, mostly-independent
 | 5.1 | Captioning stage (BLIP) | Navya | ✅ Done |
 | 5.2 | Decomposition SFT dataset construction | Navya | ✅ Done |
 | 5.3 | LoRA fine-tune (SmolLM2-135M) | Navya | ✅ Done (Sync Point 2 deliverable) |
-| 5.4 | Constrained decoding + fallback | Navya | ⬜ Next |
-| 5.5 | Wire decomposition into pipeline | Navya | ⬜ Pending |
 | — | **Sync Point 2 (Model Handoff)** | Both | ✅ Adapter ready: `ml/models/decomposer-lora` |
+| 5.4 | Constrained decoding + fallback | Kajal *(picked up from Navya, by agreement)* | ✅ Done |
+| 5.5 | Wire decomposition into pipeline | Kajal *(picked up from Navya, by agreement)* | ✅ Done |
 
-**11 of ~16 of Kajal's tasks are complete.** All of Kajal's work through Sync Point 2 is done — Kajal is currently ahead of schedule, waiting on Navya's LoRA adapter.
+**13 of Kajal's tasks are complete**, including Tasks 5.4 and 5.5, which were originally on Navya's side of the split but picked up by Kajal by mutual agreement once Sync Point 2 landed, so the pipeline wiring wouldn't sit idle waiting. Remaining work (6.1–6.4 confidence/calibration, 7.2 text pipeline, 8.3 failure analysis) is still Navya's.
 
 ---
 
@@ -152,7 +152,7 @@ Built one shared scoring system that runs any reconstruction method through the 
 Set up the text-only counterpart to Task 1.1/1.2, for whenever the text pipeline (Navya's Task 7.2) needs a reference set to retrieve/train against.
 
 - Downloaded the cleaned Stanford Alpaca instruction dataset (`yahma/alpaca-cleaned`) and curated **700 (prompt, output) pairs** — same scope cap as the image side, for consistency. Mapping: an Alpaca row's `output` (generated text) plays the role an image plays on the image side; its `instruction` (+ `input`, if present) is the prompt to be reconstructed.
-- Filtered on prompt length (3-60 tokens) and non-empty output; 0 near-duplicate prompts found in this subset (vs. 110 on the image side), so no dedup was needed.
+- Filtered on prompt length (3-60 tokens) and non-empty output; 0 near-duplicate clusters found in this subset via the same cosine-0.95 clustering Task 1.2 uses (vs. 54 clusters / 129 pairs on the image side), so no dedup was needed. *(Correction, 2026-09-11: this line previously compared against 110, which is Task 1.1's ingestion-time exact-string-dedup count, not Task 1.2's clustering count — the wrong metric for an apples-to-apples comparison. Flagged by Navya in §9.)*
 - Reused Task 1.2's exact prompt-disjoint splitting method (same Union-Find clustering, same 0.95 cosine threshold) on the Alpaca prompts: **560 train / 70 val / 70 test**, verified zero cross-split near-duplicate prompts.
 - Output: `data/alpaca/pairs.parquet`, `data/splits/alpaca_{train,val,test}.json`
 - This is purely a data-prep step (optional per the plan, no downstream blockers) — no embeddings/FAISS/Mongo were built for it, since that's Navya's text-pipeline task, not part of Kajal's list.
@@ -340,6 +340,24 @@ Fine-tuned a decomposition model with PEFT/LoRA on the 560-row SFT set from Task
   140/140.**
 - Results: `docs/results/train_decomposer.md`, `docs/results/decomposer_eval.md`
 
+### Task 5.4 — Constrained Decoding + Fallback *(picked up by Kajal)*
+Guarantees the serving pipeline never receives an unparseable decomposition, without touching how `decompose_batch` is scored for the eval harness.
+
+- **Scope decision:** Task 5.3's own write-up flagged `outlines` (grammar-constrained decoding) as the intended approach. Given this machine's tight memory budget (Docker's WSL2 VM is capped at 3.7GB out of 7.6GB total RAM — discovered directly while testing this task, see below), adding a new dependency that wraps the model with its own generation machinery was judged a real risk for a modest gain: `decompose_batch` already measures 100% schema validity on val. Implemented instead as a **bounded retry + deterministic fallback** — the standard, dependency-free version of the same guarantee.
+- `decompose_reliably()` (`ml/app/decompose.py`) re-prompts only the rows that failed to parse (not the whole batch), up to one retry, then falls back to a schema-valid result built from the evidence block's caption line, so a row is never dropped.
+- `decompose_batch` itself is untouched, since Task 5.3's own eval measures its *raw* schema-validity rate as a done-condition metric — adding a safety net there would hide what that metric is designed to catch.
+- Tests: `ml/tests/test_decompose_reliable.py` (4 tests, stubbed — no model needed to verify the retry/fallback control flow).
+
+### Task 5.5 — Wire Decomposition Into the Pipeline *(picked up by Kajal)*
+Replaced the Task 3.1 placeholder (top-1 candidate's fields) with the real model.
+
+- New `POST /internal/decompose` (`ml/app/routes/decompose.py`): takes a caption + retrieved prompts + optional PEZ prompt, renders the same evidence-block format Task 5.2 trains on, and returns guaranteed-valid `StructuredFields` via `decompose_reliably`.
+- `server/src/routes/reconstruct.js` now calls `/internal/retrieve` → `/internal/caption` → `/internal/decompose` in sequence per request, and persists real `captioning_ms`/`decomposition_ms` (previously always `null`).
+- **Graceful degradation, not a hard dependency:** if captioning or decomposition fails or times out, the response still returns 200 with the retrieval-only placeholder fields, `status: "degraded"` (an enum value the frozen schema already reserved for exactly this) instead of failing the whole request — retrieval already succeeded by that point.
+- **Found and fixed along the way:** the trained adapter's default load path (`data/models/decomposer-lora`, gitignored) didn't match where it's actually committed (`ml/models/decomposer-lora`) — anyone who hadn't manually copied it would hit a silent `FileNotFoundError`. Fixed by setting `DECOMPOSER_ADAPTER` in `docker-compose.yml` to the committed path, the single place this should be configured.
+- **Also found:** Docker Desktop's WSL2 memory limit on this machine defaults to 3.7GB (half of the laptop's 7.6GB total) — running BLIP-large + the decomposer's base model together came close to that ceiling and caused one transient multi-minute stall during testing. Not hit again after that; noted here since it's a real hardware ceiling for the report, not a code bug, and worth knowing if `/api/reconstruct` seems unexpectedly slow later.
+- Verified end-to-end: full request (retrieval + caption + decompose) completes in **~31s**, `status: "completed"`, `structured_fields.subject` populated from the real model. Server suite 9/9, ml suite 146/146.
+
 ---
 
 ## 6. Summary of Scope Decisions (for the report/viva)
@@ -356,13 +374,13 @@ All driven by the same root cause: **CPU-only hardware, limited storage, limited
 | Weak-label LLM seed set | 5–10K LLM-labeled prompts | none (hook built, unused) | Seed set would exceed the 700-prompt corpus; no LLM credentials in this env |
 | Captioning model | BLIP-2, or LLaVA-1.5-7B if VRAM allows | BLIP-1 large (~470M) | BLIP-2 needs ~7.5GB bf16 / ~15GB fp32 vs ~6.3GB available, CPU-only; env-swappable, no code change needed on a GPU box |
 | Decomposer base model | Mistral-7B-Instruct / Llama-3-8B, 4-bit | SmolLM2-135M-Instruct + LoRA r=16 | bitsandbytes 4-bit is CUDA-only, 7B needs ~14GB bf16 vs ~9GB free; flan-t5-base tried first but T5 cannot emit `{`/`}` at all |
+| Constrained decoding (5.4) | `outlines` grammar-constrained generation | Bounded retry + deterministic fallback | Docker's WSL2 VM is capped at 3.7GB on this 7.6GB-RAM laptop; `decompose_batch` already measures 100% schema validity on val, so a new dependency was judged not worth the memory/complexity risk for the remaining gain |
 
 ## 7. What's Next
 
-- **Kajal:** nothing required until Navya delivers — all work through Sync Point 2 is done. Two things worth a reply, though: (a) confirm the data-provenance question in §9, and (b) note that `negative_constraints` should come out of the component-F1 headline in 4.3/8.1.
-- **Navya:** Tasks 1.3, 5.1, 5.2 and 5.3 done. **Next up: 5.4 (constrained decoding + fallback)**, then 5.5 (wire into the pipeline). 5.4 is lower-risk than expected now — the adapter already emits schema-valid JSON on 100% of val rows, so constrained decoding is a safety net rather than a necessity, and the base is decoder-only, which is what `outlines` supports.
-- **Kajal:** the adapter is ready at `ml/models/decomposer-lora` (3.6 MB, in-repo). `ml/app/component_eval.py` fills the component-F1 gap your 4.3 harness left pending on my weak labels — import `score_predictions()` directly. Two things to know before 8.1: component F1 is currently **0.1248** (the model learned the output format, not the field mapping — see `docs/results/decomposer_eval.md` for the majority-class analysis), and `negative_constraints` should stay out of the headline macro at 4/700 support.
-- **Sync Point 2 (Model Handoff):** Navya delivers her trained LoRA decomposition model; Kajal wires it into the evaluation harness (already built) for real, final metrics.
+- **Kajal:** Tasks 5.4 and 5.5 are now done too (picked up from Navya's side by agreement, see above) — the real decomposer is live in `/api/reconstruct`, replacing the Task 3.1 placeholder. Nothing required until Navya's next delivery, except replying to §9's data-provenance question (done, see the reply there) and, for 8.1, remembering that component F1 is currently **0.1248** and `negative_constraints` should stay out of the headline macro at low support.
+- **Navya:** Tasks 1.3, 5.1, 5.2, 5.3 done, and 5.4/5.5 no longer blocking anything on your side. **Next up: 6.1–6.4 (confidence/calibration)** — the biggest remaining piece — then 7.2 (text pipeline) and 8.3 (failure analysis).
+- **Sync Point 2 (Model Handoff):** reached — adapter delivered, scored through the eval harness, and wired into the live pipeline.
 
 ## 8. Key Files Reference
 
@@ -418,3 +436,21 @@ side, and it would fail silently rather than loudly.
    pin the HF dataset revision in `scripts/ingest_diffusiondb.py`.
 3. Either way, this belongs in `docs/REPRODUCE.md` for Task 8.5, since the reproducibility
    pack claims a clean clone reproduces the headline table from scratch.
+
+**Reply *(Kajal, 2026-09-11):*** Ran suggestion #1 on my machine's `data/diffusiondb/pairs.parquet`
+(the same file the original 700-pair Task 1.1 numbers came from):
+
+```
+rows: 700
+sha256: ee200e2144937ce67cd043e00882d0dd8c2864b2aa5974e27c80335a175f002c
+```
+
+Can you run the same command on your machine (`docker compose run --rm ml python -c "..."`, same
+snippet: sort rows by id, hash `id,prompt` per row) and paste your hash here? If they differ, that
+confirms the corpora genuinely diverged (most likely candidate: `poloclub/diffusiondb`'s
+`2m_random_5k` config wasn't pinned to a revision in `scripts/ingest_diffusiondb.py`, so a
+re-upload or a `datasets` library version difference between our two installs could change
+row order/content even for a nominally-fixed predefined split). Also fixed the "110" mixup this
+made me notice — see the corrected line under Task 1.4 above. Agree with your #2/#3: once we
+confirm a mismatch, I'll pin a `revision=` on the `load_dataset` call and we pick one machine's
+`data/` as canonical before Task 8.5.
