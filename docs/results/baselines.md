@@ -1,8 +1,8 @@
-# Baseline Evaluation (Task 4.3)
+# Reconstruction Method Evaluation
 
-Both baselines (PEZ, Task 4.1; naive CLIP-tag, Task 4.2) scored through the same harness (`ml/app/eval.py`) on the same 20 test-split images.
+PEZ, the naive CLIP-tag baseline, and the LoRA decomposition model scored through the same harness (`ml/app/eval.py`) on the same 20 test-split images.
 
-**Not included:** component-wise precision/recall/F1 against weak structured labels - Task 1.3 (weak labeling) hasn't landed yet. Extend this harness once it does.
+**Decomposer note:** its output is structured JSON (subject/style/medium/lighting/modifiers/tone/negative_constraints), flattened into a single string here so it can be scored on the same footing as the other two methods. Component-wise precision/recall/F1 against weak structured labels is a separate, complementary evaluation - see `docs/results/decomposer_eval.md`.
 
 ## Summary
 
@@ -10,6 +10,17 @@ Both baselines (PEZ, Task 4.1; naive CLIP-tag, Task 4.2) scored through the same
 |---|---|---|---|
 | pez | 0.2964 | 0.7188 | 67.98 |
 | clip_tag | 0.2355 | 0.7404 | 1.64 |
+| decomposer | 0.1689 | 0.7199 | 61.58 |
+
+**Latency caveat:** the decomposer's 61.58 s/image includes a one-time base-model download and load on the machine this was run on; that cost is amortized over only 20 images here. Navya's own run (model already cached) measured 3.34 s/row, which is the representative inference-time figure.
+
+## Interpretation
+
+The decomposer currently scores **lowest on CLIP-score** of the three methods, consistent with the low component-level F1 (0.1248) already reported in `docs/results/decomposer_eval.md`: at 560 training rows and 135M parameters, it learned the JSON output format and a plausible-sounding subject, but not a reliable mapping from evidence to the specific style/medium/lighting/modifier values that would make its output match the image more precisely.
+
+Its **BERTScore F1 (0.7199) sits between PEZ and CLIP-tag**, which is a different and informative signal: unlike PEZ's word-salad output, the decomposer's flattened prompts are grammatical, readable sentences (e.g. `"a giant mythical leviathan flying across the ocean, digital art, trending on artstation"`), so they read more like a real prompt even where the specific details are wrong. This mirrors the PEZ vs. CLIP-tag trade-off noted below: image-similarity and text-readability are measuring different things, and no single method wins both here yet.
+
+This is an expected, honestly-reported result for a first fine-tune on a small model/dataset, not a bug in the harness or the eval — see `docs/results/decomposer_eval.md` for the model's own detailed self-assessment and next-step recommendations (loss re-weighting, a bigger base model, higher LoRA rank).
 
 ## Per-image detail
 
@@ -55,3 +66,23 @@ Both baselines (PEZ, Task 4.1; naive CLIP-tag, Task 4.2) scored through the same
 | clip_tag | 000139 | 0.2310 | 0.7176 | surrealism, photograph, studio lighting |
 | clip_tag | 000144 | 0.2863 | 0.7361 | cyberpunk, photograph, neon lighting |
 | clip_tag | 000158 | 0.2172 | 0.6882 | photorealistic, photograph, golden hour lighting |
+| decomposer | 000001 | 0.1644 | 0.7780 | retrofuturistic portrait of a man in a space suit, artstation, cinematic lighting, smooth transparent visor, close up, trending on artstation, intricate, 8 k |
+| decomposer | 000003 | 0.2318 | 0.7640 | a giant mythical leviathan flying across the ocean, digital art, trending on artstation |
+| decomposer | 000005 | 0.1650 | 0.7831 | retrofuturistic portrait of a 2 1 savage in astronaut helmet, artstation, smooth transparent visor, detailed space graphics in background, close up, 5 k, artgerm |
+| decomposer | 000006 | 0.1313 | 0.7187 | a futuristic fine lasers tracing, art, oil on canvas, dark, art of a women in modern fashion, color ink painting, candy chip color, octane hyperrealism photorealistic airbrush collage painting, dark monochrome, trending on artnet |
+| decomposer | 000027 | 0.0831 | 0.6838 | an oil painting of dwayne johnson dressed as all might from my hero academia by artgerm |
+| decomposer | 000032 | 0.1694 | 0.7186 | batman the dark knight portrait insanely defined intricate low angle grim powerful mist dark environment city background on top of a gotham building moon dark clouds red highlights |
+| decomposer | 000034 | 0.1872 | 0.6369 | a woman sitting next to a man |
+| decomposer | 000049 | 0.0633 | 0.6951 | an abstract painting of a red frog with blue and green circles on it, abstract, oil on canvas, dark, realistic, photorealistic, photorealistic, photorealistic acrylic, octane hyperrealism photorealistic airbrush collage painting, dark monochrome, cinematic, 8ies eros |
+| decomposer | 000070 | 0.1630 | 0.7117 | portrait of one! white anthropomorphic lion with helmet cyborg blue and gold |
+| decomposer | 000077 | 0.0920 | 0.6984 | joe biden standing ominously deep in the foggy woods with a demonic smile in his face, iphone photo, creepy, low visibility creepy |
+| decomposer | 000084 | 0.2609 | 0.8041 | futuristic futuristic city in the middle of a lake, 3 d render, cinematic lighting, cgsociety, pixiv |
+| decomposer | 000088 | 0.2201 | 0.7789 | a cat with human teeth |
+| decomposer | 000089 | 0.1843 | 0.7200 | zen futuristic city ink |
+| decomposer | 000103 | 0.1836 | 0.7601 | a complex thick bifurcated robotic cnc surgical arm cybernetic symbiosis hybrid mri 3 d printer machine printing some highly detailed large ferrari motors in inspection laboratory control panel room, octane render, natural color scheme, f 1 8, octane render |
+| decomposer | 000115 | 0.1916 | 0.7353 | sitting on a rock |
+| decomposer | 000128 | 0.2325 | 0.5873 | wolf |
+| decomposer | 000131 | 0.1356 | 0.6794 | a man taking a selfie from the top of the tallest tower in the world, studio lighting, beautiful city, wide lens |
+| decomposer | 000139 | 0.1849 | 0.7465 | a paint of dan mumford |
+| decomposer | 000144 | 0.1586 | 0.7148 | a bearded man in bulky mech armor that looks too big for his head |
+| decomposer | 000158 | 0.1751 | 0.6837 | lt. liama from fortnite game |

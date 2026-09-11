@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Task 4.3 - run the evaluation harness on both baselines.
+"""Task 4.3 - run the evaluation harness on all reconstructors.
 
 Scores PEZ (Task 4.1) and the naive CLIP-tag baseline (Task 4.2) through
 the same harness (app.eval.run_eval), reusing their already-computed
 results (data/results/{pez,cliptag}_baseline.json) instead of re-running
-PEZ's ~20+ minute optimization - see app.eval's module docstring for the
-"reconstructor" interface this relies on.
+PEZ's ~20+ minute optimization, and additionally scores the LoRA
+decomposition model (Task 5.3) live - see app.eval's module docstring for
+the "reconstructor" interface this relies on.
 
 Output:
     data/results/baselines.csv - one row per (reconstructor, image)
@@ -22,17 +23,29 @@ from __future__ import annotations
 import csv
 import json
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import open_clip
 import pyarrow.parquet as pq
+import torch
+import torch.nn.functional as F
 
+from app.decompose import decompose_batch
+from app.embed import embed_images, get_clip_model
 from app.eval import run_eval
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 PAIRS_PATH = DATA_DIR / "diffusiondb" / "pairs.parquet"
+IMAGES_DIR = DATA_DIR / "diffusiondb"
 TEST_SPLIT_PATH = DATA_DIR / "splits" / "test.json"
+DECOMP_SFT_PATH = DATA_DIR / "decomp_sft.jsonl"
 RESULTS_DIR = DATA_DIR / "results"
+
+# The trained adapter ships inside the repo (small enough to commit, unlike
+# data/), so it lives under the ml package rather than under DATA_DIR.
+DECOMPOSER_ADAPTER_DIR = Path(__file__).resolve().parent.parent / "models" / "decomposer-lora"
 
 NUM_TEST_IMAGES = 20
 
@@ -65,6 +78,57 @@ def _load_precomputed(path: Path):
     return _reconstructor, items_by_id
 
 
+def _flatten_fields(result) -> str:
+    """Render a decomposition result as a single prompt string, so it can be
+    scored on the same footing as PEZ's hard prompt and the CLIP-tag
+    baseline's tag concatenation. Empty when parsing failed - a low
+    CLIP-score for that row is the correct, informative outcome.
+    """
+    if not result.is_valid:
+        return ""
+    fields = result.fields
+    parts = [fields.subject]
+    parts.extend(v for v in (fields.style, fields.medium, fields.lighting, fields.tone) if v)
+    parts.extend(fields.modifiers)
+    return ", ".join(parts)
+
+
+def _build_decomposer_reconstructor(image_ids: list[str]):
+    """Builds a "reconstructor" callable for the Task 5.3 LoRA decomposer.
+
+    Unlike the precomputed baselines, this one runs live: it loads each
+    image's evidence block from data/decomp_sft.jsonl (built by Navya's
+    Task 5.2 pipeline), decomposes it, and scores the flattened result
+    against the image embeddings passed in at call time.
+    """
+    with open(DECOMP_SFT_PATH, encoding="utf-8") as f:
+        input_by_id = {row["id"]: row["input_text"] for row in (json.loads(line) for line in f)}
+    input_texts = [input_by_id[i] for i in image_ids]
+
+    tokenizer = open_clip.get_tokenizer("ViT-B-32-quickgelu")
+
+    def _reconstructor(target_embeddings):
+        t0 = time.time()
+        decompositions = decompose_batch(
+            input_texts, use_adapter=True, adapter_dir=DECOMPOSER_ADAPTER_DIR
+        )
+        prompts = [_flatten_fields(r) for r in decompositions]
+
+        model, _ = get_clip_model()
+        with torch.no_grad():
+            prompt_embeds = F.normalize(model.encode_text(tokenizer(prompts)), dim=-1)
+        targets = target_embeddings if torch.is_tensor(target_embeddings) else torch.tensor(target_embeddings)
+        similarities = (prompt_embeds.float() @ targets.float().T).diagonal()
+
+        items = [
+            _Item(prompt=prompt, cosine_similarity=float(sim))
+            for prompt, sim in zip(prompts, similarities)
+        ]
+        return _BatchResult(items=items, wall_clock_seconds=time.time() - t0)
+
+    return _reconstructor
+
+
 def main() -> None:
     with open(TEST_SPLIT_PATH) as f:
         test_ids = json.load(f)[:NUM_TEST_IMAGES]
@@ -77,13 +141,18 @@ def main() -> None:
     cliptag_fn, cliptag_items = _load_precomputed(RESULTS_DIR / "cliptag_baseline.json")
     assert list(pez_items) == image_ids, "pez_baseline.json image order doesn't match test split"
     assert list(cliptag_items) == image_ids, "cliptag_baseline.json image order doesn't match test split"
+    decomposer_fn = _build_decomposer_reconstructor(image_ids)
 
-    print("Scoring PEZ and CLIP-tag through the same harness (computing BERTScore)...")
+    print(f"Embedding {len(rows)} test images (needed to score the decomposer live)...")
+    image_bytes = [(IMAGES_DIR / r["image_path"]).read_bytes() for r in rows]
+    target_embeddings = torch.from_numpy(embed_images(image_bytes))
+
+    print("Scoring PEZ, CLIP-tag, and the LoRA decomposer through the same harness (computing BERTScore)...")
     eval_rows = run_eval(
-        {"pez": pez_fn, "clip_tag": cliptag_fn},
+        {"pez": pez_fn, "clip_tag": cliptag_fn, "decomposer": decomposer_fn},
         image_ids=image_ids,
         original_prompts=original_prompts,
-        target_embeddings=None,  # unused - both reconstructors return precomputed results
+        target_embeddings=target_embeddings,
     )
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -101,14 +170,17 @@ def main() -> None:
 
     md_path = RESULTS_DIR / "baselines.md"
     with open(md_path, "w") as f:
-        f.write("# Baseline Evaluation (Task 4.3)\n\n")
+        f.write("# Reconstruction Method Evaluation\n\n")
         f.write(
-            f"Both baselines (PEZ, Task 4.1; naive CLIP-tag, Task 4.2) scored through the same harness "
-            f"(`ml/app/eval.py`) on the same {len(rows)} test-split images.\n\n"
+            f"PEZ, the naive CLIP-tag baseline, and the LoRA decomposition model scored through the "
+            f"same harness (`ml/app/eval.py`) on the same {len(rows)} test-split images.\n\n"
         )
         f.write(
-            "**Not included:** component-wise precision/recall/F1 against weak structured labels - "
-            "Task 1.3 (weak labeling) hasn't landed yet. Extend this harness once it does.\n\n"
+            "**Decomposer note:** its output is structured JSON (subject/style/medium/lighting/"
+            "modifiers/tone/negative_constraints), flattened into a single string here so it can be "
+            "scored on the same footing as the other two methods. Component-wise precision/recall/F1 "
+            "against weak structured labels is a separate, complementary evaluation - see "
+            "`docs/results/decomposer_eval.md`.\n\n"
         )
         f.write("## Summary\n\n")
         f.write("| Reconstructor | Mean CLIP-score | Mean BERTScore F1 | Mean latency (s/image) |\n")

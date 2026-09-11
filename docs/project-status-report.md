@@ -132,14 +132,19 @@ Built one shared scoring system that runs any reconstruction method through the 
 - Added **BERTScore** as a new metric: measures whether the generated prompt *reads* like the real prompt (semantic/textual similarity), not just whether it matches the image.
 - **Efficiency decision:** rather than re-run PEZ's expensive 23-minute optimization to score it again, the baseline scripts now save their raw results to a reusable file, which the harness loads instantly.
 
-**Combined results:**
+**Combined results (updated after Sync Point 2 to add the LoRA decomposer):**
 
 | Method | CLIP-score | BERTScore F1 | Speed |
 |---|---|---|---|
 | PEZ | 0.2964 | 0.7188 | 68s/image |
 | CLIP-tag | 0.2355 | 0.7404 | 1.6s/image |
+| LoRA decomposer | 0.1689 | 0.7199 | 3.3s/image* |
+
+*\*Representative inference-time figure once the base model is cached (measured by Navya); the harness run on Kajal's machine measured higher because it included the one-time base-model download.*
 
 **Notable finding:** PEZ wins on CLIP-score but *loses* on BERTScore. PEZ optimizes purely for image-embedding similarity, producing garbled text that matches the image well but reads as nonsense. CLIP-tag produces clean, readable phrases that read more like a real prompt, even though they match the image less precisely. This is a genuine, explainable trade-off — not a bug in either method — and a good talking point for the report.
+
+**Decomposer, added after Sync Point 2:** its structured JSON output was flattened into a single prompt string so it could be scored on the same footing. It currently scores lowest on CLIP-score — consistent with the low component-level F1 (0.1248) Navya already measured — but its BERTScore sits between PEZ and CLIP-tag, since its output reads as a coherent sentence even when the specific details are wrong. Expected for a first fine-tune on 560 rows and a 135M-parameter model, not a harness issue. Full write-up: `docs/results/baselines.md`.
 
 - Full results: `docs/results/baselines.md` + `.csv`
 
