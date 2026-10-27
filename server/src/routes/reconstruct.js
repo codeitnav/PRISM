@@ -29,7 +29,12 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
 })
 
-const ML_TIMEOUT_MS = 60_000
+// 120s, not 60s: on CPU-only hardware, captioning and decomposition are each
+// real inference calls, and measured latency varies a lot under contention
+// from the other services sharing this machine's cores (retrieval is
+// sub-second; captioning and decomposition were each individually observed
+// anywhere from ~15s to ~30s+ depending on load).
+const ML_TIMEOUT_MS = 120_000
 
 function errorPayload(error, message) {
   return { error, message, details: null }

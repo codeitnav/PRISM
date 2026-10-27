@@ -3,8 +3,9 @@
 Wraps the LoRA-adapted decomposer that turns an evidence block (caption,
 retrieved prompts, PEZ output) into StructuredFields.
 
-Base model: SmolLM2-135M-Instruct with LoRA on the attention q/v projections.
-Two constraints drove this choice and are worth knowing before changing it:
+Base model: Qwen2.5-VL-3B-Instruct with LoRA on the attention q/v projections.
+Two constraints drove the original base model choice and are worth knowing
+before changing it again:
 
   - 4-bit quantization via bitsandbytes is CUDA-only, so the 7B-class models
     the design originally called for need ~14 GB at bf16 on CPU. They do not
@@ -36,7 +37,7 @@ ADAPTER_DIR = Path(
     os.environ.get("DECOMPOSER_ADAPTER", str(DATA_DIR / "models" / "decomposer-lora"))
 )
 
-BASE_MODEL = os.environ.get("DECOMPOSER_BASE", "HuggingFaceTB/SmolLM2-135M-Instruct")
+BASE_MODEL = os.environ.get("DECOMPOSER_BASE", "Qwen/Qwen2.5-VL-3B-Instruct")
 # Prompt and target share one sequence. The observed worst case is ~850
 # tokens, so this leaves headroom without padding cost.
 MAX_SEQ_TOKENS = int(os.environ.get("DECOMPOSER_MAX_SEQ", "1024"))

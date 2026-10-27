@@ -437,6 +437,23 @@ side, and it would fail silently rather than loudly.
 3. Either way, this belongs in `docs/REPRODUCE.md` for Task 8.5, since the reproducibility
    pack claims a clean clone reproduces the headline table from scratch.
 
+**Follow-up bug found *(Kajal, 2026-09-11):*** tried running `make weak-label` locally to populate
+structured_fields on my own machine's Mongo (each of us has a separate local database, so Navya's
+run never touched mine) and hit a crash that's most likely a symptom of this same corpus mismatch:
+
+```
+id 000318, prompt: '✨🕌🌙, Art Deco, Trending artstation, octane render, surrealist, cinematic, horizon forbidden west'
+pydantic_core._pydantic_core.ValidationError: subject — String should have at least 1 character
+```
+
+`weak_label()` in `app/weak_label.py` classifies every comma-separated segment after the leading
+emoji into style/medium/lighting/modifiers, leaving nothing for `subject` — which
+`StructuredFields` requires non-empty. Didn't attempt a fix myself since it's your labeling logic
+and I don't want to shift the audited 0.742 precision figure without you seeing it; flagging so
+you can decide the right fallback (e.g. keep the raw prompt as `subject` when classification
+would otherwise empty it out). This prompt likely doesn't exist in your corpus, which is one more
+data point for the checksum comparison above.
+
 **Reply *(Kajal, 2026-09-11):*** Ran suggestion #1 on my machine's `data/diffusiondb/pairs.parquet`
 (the same file the original 700-pair Task 1.1 numbers came from):
 
