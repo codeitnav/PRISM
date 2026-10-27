@@ -35,7 +35,7 @@ jsonschema==4.23.0
 # (CUDA availability, VRAM, and a real ViT-L/14 load+forward pass).
 torch==2.5.1
 open_clip_torch==2.29.0
-transformers==4.46.3
+transformers==4.49.0  # Qwen2_5_VLForConditionalGeneration requires >=4.49.0
 faiss-cpu==1.9.0
 sentence-transformers==3.3.1
 peft==0.13.2

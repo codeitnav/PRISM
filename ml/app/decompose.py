@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 
 from app.schemas.structured_fields import StructuredFields
 
@@ -117,11 +117,15 @@ def load_model(adapter_dir: Optional[Path] = ADAPTER_DIR, use_adapter: bool = Tr
     if key in _cache:
         return _cache[key]
 
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
+    processor = AutoProcessor.from_pretrained(BASE_MODEL)
+    tokenizer = processor.tokenizer
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, torch_dtype=torch.float32)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        BASE_MODEL, torch_dtype=torch.bfloat16
+    ).to(device)
 
     if use_adapter:
         if adapter_dir is None or not Path(adapter_dir).exists():
@@ -202,6 +206,7 @@ def decompose_batch(
                 max_length=MAX_SEQ_TOKENS - MAX_TARGET_TOKENS,
                 add_special_tokens=False,  # the chat template already adds them
             )
+            encoded = {k: v.to(model.device) for k, v in encoded.items()}
             with torch.no_grad():
                 generated = model.generate(
                     **encoded,

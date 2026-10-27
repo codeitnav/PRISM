@@ -122,8 +122,12 @@ class TestLoadModel:
             calls["model"] = name
             return _StubModel()
 
-        monkeypatch.setattr(dec.AutoModelForCausalLM, "from_pretrained", fake_from_pretrained)
-        monkeypatch.setattr(dec.AutoTokenizer, "from_pretrained", lambda n: _StubTokenizer())
+        monkeypatch.setattr(
+            dec.Qwen2_5_VLForConditionalGeneration, "from_pretrained", fake_from_pretrained
+        )
+        monkeypatch.setattr(
+            dec.AutoProcessor, "from_pretrained", lambda n: _StubProcessor()
+        )
         dec._cache.clear()
         model, tokenizer = dec.load_model(adapter_dir=None, use_adapter=False)
         assert calls["model"] == dec.BASE_MODEL
@@ -152,8 +156,18 @@ class _StubTokenizer:
         return VALID_JSON
 
 
+class _StubProcessor:
+    def __init__(self):
+        self.tokenizer = _StubTokenizer()
+
+
 class _StubModel:
+    device = "cpu"
+
     def eval(self):
+        return self
+
+    def to(self, device):
         return self
 
     def generate(self, input_ids=None, attention_mask=None, **kw):

@@ -38,7 +38,11 @@ from pathlib import Path
 
 import torch
 from peft import LoraConfig, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup
+from transformers import (
+    AutoProcessor,
+    Qwen2_5_VLForConditionalGeneration,
+    get_linear_schedule_with_warmup,
+)
 
 from app.decompose import (
     BASE_MODEL,
@@ -156,6 +160,7 @@ def evaluate(model, batches) -> float:
     model.eval()
     total_loss, total_tokens = 0.0, 0
     for batch in batches:
+        batch = {k: v.to(model.device) for k, v in batch.items()}
         out = model(**batch)
         n = int((batch["labels"] != -100).sum())
         total_loss += float(out.loss) * n
@@ -182,10 +187,16 @@ def main() -> None:
     train_rows, val_rows = load_rows(args.limit)
     print(f"Train rows: {len(train_rows)} | val rows: {len(val_rows)}")
 
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Device: {device}")
+
+    processor = AutoProcessor.from_pretrained(BASE_MODEL)
+    tokenizer = processor.tokenizer
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, torch_dtype=torch.float32)
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        BASE_MODEL, torch_dtype=torch.bfloat16
+    ).to(device)
     model = get_peft_model(
         model,
         LoraConfig(
@@ -234,6 +245,7 @@ def main() -> None:
         running, running_n = 0.0, 0
 
         for i, batch in enumerate(batches, 1):
+            batch = {k: v.to(model.device) for k, v in batch.items()}
             out = model(**batch)
             # Scale so gradient accumulation averages rather than sums.
             (out.loss / args.grad_accum).backward()
