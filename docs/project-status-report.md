@@ -358,6 +358,16 @@ Replaced the Task 3.1 placeholder (top-1 candidate's fields) with the real model
 - **Also found:** Docker Desktop's WSL2 memory limit on this machine defaults to 3.7GB (half of the laptop's 7.6GB total) — running BLIP-large + the decomposer's base model together came close to that ceiling and caused one transient multi-minute stall during testing. Not hit again after that; noted here since it's a real hardware ceiling for the report, not a code bug, and worth knowing if `/api/reconstruct` seems unexpectedly slow later.
 - Verified end-to-end: full request (retrieval + caption + decompose) completes in **~31s**, `status: "completed"`, `structured_fields.subject` populated from the real model. Server suite 9/9, ml suite 146/146.
 
+### Task 5.3 revision - GPU retrain on Kubeflow *(Navya, 2026-10)*
+The CPU-bound SmolLM2-135M run above was superseded by a retrain on a single GPU on the college Kubeflow cluster.
+
+- **Base model:** `Qwen/Qwen2.5-VL-3B-Instruct` + LoRA r=16 (alpha 32) on `q_proj`/`v_proj` - 3.69M trainable / 3.76B (0.10%). Used text-only: the evidence block (caption, retrieved prompts, PEZ) is the input; the image itself is not passed to the model.
+- **Data:** the corpus was scaled up from 700 to **3220 pairs** (2576 train / 322 val / 322 test), drawn from the full `2m_random_5k` config (`MAX_PAIRS` 5000, same filters). Ids in this corpus are *not* aligned with the earlier 700-pair corpus (0/700 identical prompts per id), so artifacts from the two must not be mixed. The corresponding FAISS index (2576 vectors), captions, weak labels and SFT set were regenerated. The 3220 source images were not retained locally, so image-dependent scripts (PEZ/CLIP-tag/`make eval`) cannot be re-run on this corpus; retrieval serving only needs the FAISS index.
+- **Training:** 3 epochs, effective batch 16, lr 1e-3, 7.3 min on one GPU. Val loss 2.005 -> **1.097**.
+- **Results (val, 322 rows):** schema-valid **100%**; headline component F1 **0.2089** (was 0.1248), versus 0.0617 zero-shot and 0.0846 few-shot. Best fields: `medium` 0.277, `subject` 0.245, `style` 0.224. Weakest: `tone` 0.142, `lighting` 0.150. Full write-up: `docs/results/decomposer_eval.md`, `docs/results/train_decomposer.md`.
+- **Adapter:** `ml/models/decomposer-lora` (14.7 MB, committed).
+- **Open:** `docs/results/baselines.md` still shows the old SmolLM2 decomposer row (CLIP 0.1689 on the 700-image test subset) and has not been re-scored with this adapter.
+
 ---
 
 ## 6. Summary of Scope Decisions (for the report/viva)

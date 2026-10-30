@@ -205,22 +205,18 @@ def _write_report(args, rows, tuned, control, fewshot=None) -> None:
         beats_fewshot = tuned["headline_macro_f1"] > fewshot["headline_macro_f1"]
         lines += [
             "",
-            "### On the controls - and why neither is informative here",
+            "### On the controls",
             "",
-            "Both controls score **0.0 F1**, and that is a limitation of the comparison "
-            "rather than a triumph. The strict zero-shot control emits schema-valid JSON on "
-            f"only {control['schema_validity']*100:.1f}% of rows; the few-shot control, shown "
-            f"two format demonstrations, manages {fewshot['schema_validity']*100:.1f}% - "
-            "*worse*, because the longer prompt gives a 135M model more to lose track of.",
-            "",
-            "The few-shot control was added specifically to separate **format learning** from "
-            "**task learning**: if an untrained model shown the format could score above zero, "
-            "then the fine-tune's gain would be attributable to the task rather than to "
-            "learning to emit JSON. It cannot. So at this model scale the two are "
-            "inseparable, and the honest reading of "
-            f"**{tuned['headline_macro_f1']:.4f}** vs **0.0000** is: *the fine-tune is what "
-            "makes the model able to attempt the task at all*, not that it has learned the "
-            "mapping well. The absolute F1 below is what says how well it learned it.",
+            "The few-shot control (same weights, no training, shown two format "
+            "demonstrations) separates **format learning** from **task learning**. The "
+            f"zero-shot control emits schema-valid JSON on {control['schema_validity']*100:.1f}% "
+            f"of rows (F1 {control['headline_macro_f1']:.4f}) and the few-shot control on "
+            f"{fewshot['schema_validity']*100:.1f}% (F1 {fewshot['headline_macro_f1']:.4f}). "
+            "Any F1 the fine-tune earns above the few-shot score is attributable to "
+            "learning the task rather than to learning to emit JSON: "
+            f"**{tuned['headline_macro_f1']:.4f}** for the fine-tune versus "
+            f"**{fewshot['headline_macro_f1']:.4f}** few-shot. The per-field breakdown "
+            "below shows how well each field was learned.",
         ]
         if not beats_fewshot:
             lines.append(
@@ -238,7 +234,7 @@ def _write_report(args, rows, tuned, control, fewshot=None) -> None:
         "> Scores are agreement with the **weak labels** from Task 1.3, not with ground "
         "truth. See `docs/label-quality.md` for those labels' measured per-field precision "
         "(`modifiers` in particular is noisy at 0.26, which is why the SFT targets keep "
-        "only lexicon-recognised entries). `negative_constraints` is populated on 4 of 700 "
+        "only lexicon-recognised entries). `negative_constraints` is populated on very few "
         "rows, so it is excluded from the headline macro and reported separately.",
         "",
         "## Sample predictions",

@@ -356,7 +356,8 @@ def main() -> None:
             f"grad-accum {args.grad_accum} (effective {args.batch_size*args.grad_accum}), "
             f"lr {args.lr}, linear decay with {args.warmup_ratio:.0%} warmup\n"
         )
-        f.write(f"- **Wall clock:** {wall_min:.1f} min on CPU ({NUM_THREADS} threads)\n")
+        hw = "GPU" if torch.cuda.is_available() else f"CPU ({NUM_THREADS} threads)"
+        f.write(f"- **Wall clock:** {wall_min:.1f} min on {hw}\n")
         f.write(
             f"- **Val loss:** {initial_val:.4f} untrained -> **{best_val:.4f}** "
             f"best (epoch {best_epoch})\n\n"

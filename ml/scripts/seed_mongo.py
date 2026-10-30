@@ -25,7 +25,11 @@ import pyarrow.parquet as pq
 from pymongo import MongoClient, TEXT
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
-PAIRS_PATH = DATA_DIR / "diffusiondb" / "pairs.parquet"
+# pairs.parquet is only produced by ingest_diffusiondb.py; the corpus delivered
+# from the GPU training run ships pairs_labeled.parquet (prompts + weak labels,
+# no seed/cfg/sampler) instead, so fall back to it.
+_DB_DIR = DATA_DIR / "diffusiondb"
+PAIRS_PATH = _DB_DIR / "pairs.parquet" if (_DB_DIR / "pairs.parquet").exists() else _DB_DIR / "pairs_labeled.parquet"
 ID_MAP_PATH = DATA_DIR / "faiss" / "id_map.json"
 
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://mongo:27017/prism")
@@ -50,9 +54,9 @@ def main() -> None:
         {
             "_id": r["id"],
             "prompt": r["prompt"],
-            "seed": r["seed"],
-            "cfg": r["cfg"],
-            "sampler": r["sampler"],
+            "seed": r.get("seed"),
+            "cfg": r.get("cfg"),
+            "sampler": r.get("sampler"),
             "source": "diffusiondb",
             "faiss_id": faiss_id_by_dataset_id[r["id"]],
             "structured_fields": None,  # populated later by Task 1.3's output

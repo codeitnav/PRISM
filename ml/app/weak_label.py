@@ -345,14 +345,16 @@ def weak_label(prompt: str) -> StructuredFields:
                 fields[category] = phrase
 
     # The schema requires a non-empty subject. A prompt of nothing but
-    # style or quality tags falls back to the whole cleaned prompt. One with
-    # no word-bearing content at all yields an empty subject and so fails
-    # validation - deliberately loud, since a junk subject would silently
-    # corrupt training targets. Ingest filtering makes this unreachable for
-    # real corpus rows.
+    # style or quality tags falls back to the whole cleaned prompt. If even
+    # that has no word-bearing content (e.g. classification claimed every
+    # word-bearing segment for other fields, leaving only emoji/symbols),
+    # fall back to the raw prompt rather than an empty string - ingest
+    # filtering guarantees it has at least MIN_PROMPT_TOKENS tokens, so it is
+    # never actually empty, and a raw-prompt subject is a better training
+    # target than a validation crash.
     subject = subject_parts[0] if subject_parts else clean_segment(prompt)
     if not _WORD_RE.search(subject):
-        subject = ""
+        subject = prompt.strip()
 
     return StructuredFields(
         subject=subject,

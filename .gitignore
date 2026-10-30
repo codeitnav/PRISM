@@ -12,6 +12,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+venv/
+
+# local data bundles
+*.zip
 
 # data (large artifacts, not committed)
 data/**

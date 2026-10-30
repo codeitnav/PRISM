@@ -4,6 +4,8 @@ PEZ, the naive CLIP-tag baseline, and the LoRA decomposition model scored throug
 
 **Decomposer note:** its output is structured JSON (subject/style/medium/lighting/modifiers/tone/negative_constraints), flattened into a single string here so it can be scored on the same footing as the other two methods. Component-wise precision/recall/F1 against weak structured labels is a separate, complementary evaluation - see `docs/results/decomposer_eval.md`.
 
+> **Stale decomposer row:** the `decomposer` numbers below are from the earlier SmolLM2-135M adapter on the 700-image corpus. The current Qwen2.5-VL adapter (component F1 0.2089, see `decomposer_eval.md`) has not been re-scored through this harness because the images for its 3220-pair corpus are unavailable.
+
 ## Summary
 
 | Reconstructor | Mean CLIP-score | Mean BERTScore F1 | Mean latency (s/image) |

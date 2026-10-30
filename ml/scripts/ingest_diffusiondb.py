@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Task 1.1 - DiffusionDB subset ingestion (scoped to 700 pairs).
+"""Task 1.1 - DiffusionDB subset ingestion.
 
 Downloads DiffusionDB's predefined "2m_random_5k" split from Hugging Face
 (poloclub/diffusiondb), filters it, and writes a curated set of image-prompt
@@ -7,10 +7,10 @@ pairs to disk, stopping once MAX_PAIRS kept pairs have been collected.
 
 Scope note: the original roadmap targets a ~200-500K curated subset built by
 hand from the full 2M/14M shards. That assumes real bandwidth/storage/GPU
-budget. This project runs on a CPU-only, storage-constrained dev machine, so
-we draw from DiffusionDB's official small predefined config and cap the kept
-set at 700 pairs. Documented as a deliberate, justified scope reduction, not
-a shortcut.
+budget. The original CPU-only, storage-constrained dev machine capped this at
+700 pairs; with GPU + PVC storage now available, MAX_PAIRS is raised to use
+the full "2m_random_5k" config instead of a slice of it. Still short of the
+brief's 200-500K, which would need a larger HF config entirely.
 
 Output:
     data/diffusiondb/images/<id>.png
@@ -37,7 +37,7 @@ PAIRS_PATH = DATA_DIR / "pairs.parquet"
 MIN_PROMPT_TOKENS = 3
 MAX_PROMPT_TOKENS = 60
 NSFW_THRESHOLD = 0.2  # drop a row if image_nsfw or prompt_nsfw >= this
-MAX_PAIRS = 700  # stop early once we have this many kept pairs (scope: see project notes)
+MAX_PAIRS = 5000  # stop early once we have this many kept pairs (scope: see project notes)
 
 
 def normalize(prompt: str) -> str:

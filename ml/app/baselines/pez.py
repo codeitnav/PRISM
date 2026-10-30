@@ -103,22 +103,23 @@ def reconstruct_batch(
     model, _ = get_clip_model()
     tokenizer = _get_tokenizer()
     embedding_matrix = model.token_embedding.weight  # (vocab_size, d_model), frozen
+    device = embedding_matrix.device
     vocab_normed = F.normalize(embedding_matrix, dim=-1)  # precomputed once, not per-iteration
 
     targets = target_embeddings if torch.is_tensor(target_embeddings) else torch.tensor(target_embeddings)
-    targets = targets.float()
+    targets = targets.float().to(device)
     batch_size, d_model = targets.shape[0], embedding_matrix.shape[1]
     eot_position = 1 + num_tokens  # index 0 = SOT, then soft tokens, then EOT
 
     # PEZ initializes from real (random) vocabulary embeddings rather than
     # noise - keeps the optimization inside the manifold of real tokens.
     vocab_size = embedding_matrix.shape[0]
-    init_ids = torch.randint(NUM_SPECIAL_TOKEN_IDS, vocab_size - 1, (batch_size, num_tokens))
+    init_ids = torch.randint(NUM_SPECIAL_TOKEN_IDS, vocab_size - 1, (batch_size, num_tokens), device=device)
     soft_embeds = embedding_matrix[init_ids].clone().detach().requires_grad_(True)
 
     sot_embed = embedding_matrix[SOT_TOKEN_ID].detach().view(1, 1, -1).expand(batch_size, 1, -1)
     eot_embed = embedding_matrix[EOT_TOKEN_ID].detach().view(1, 1, -1).expand(batch_size, 1, -1)
-    pad_embeds = torch.zeros(batch_size, CONTEXT_LENGTH - num_tokens - 2, d_model)
+    pad_embeds = torch.zeros(batch_size, CONTEXT_LENGTH - num_tokens - 2, d_model, device=device)
 
     optimizer = torch.optim.Adam([soft_embeds], lr=lr)
 

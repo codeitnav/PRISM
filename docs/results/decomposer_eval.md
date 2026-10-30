@@ -1,28 +1,26 @@
 # Decomposer Evaluation - Task 5.3
 
-- **Base model:** `HuggingFaceTB/SmolLM2-135M-Instruct` + LoRA adapter (`decomposer-lora`)
-- **Split:** val (70 rows, prompt-disjoint from train)
+- **Base model:** `Qwen/Qwen2.5-VL-3B-Instruct` + LoRA adapter (`decomposer-lora`)
+- **Split:** val (322 rows, prompt-disjoint from train)
 
 ## Done-condition
 
 | Requirement | Result | Status |
 |---|---|---|
-| Schema-valid JSON on >98% of val inputs | 70/70 = **100.0%** | PASS |
-| Beats zero-shot control on component F1 | **0.1248** vs 0.0000 | PASS |
+| Schema-valid JSON on >98% of val inputs | 322/322 = **100.0%** | PASS |
+| Beats zero-shot control on component F1 | **0.2089** vs 0.0617 | PASS |
 
 ## Comparison
 
 | Variant | Schema-valid | Headline macro F1 | Full macro F1 | s/row |
 |---|---|---|---|---|
-| LoRA fine-tuned | 100.0% | **0.1248** | 0.1070 | 3.34 |
-| Zero-shot control | 2.9% | **0.0000** | 0.0000 | 8.88 |
-| Few-shot control (format shown, task untrained) | 0.0% | **0.0000** | 0.0000 | 11.02 |
+| LoRA fine-tuned | 100.0% | **0.2089** | 0.1791 | 0.77 |
+| Zero-shot control | 99.4% | **0.0617** | 0.0529 | 0.72 |
+| Few-shot control (format shown, task untrained) | 100.0% | **0.0846** | 0.0725 | 0.78 |
 
-### On the controls - and why neither is informative here
+### On the controls
 
-Both controls score **0.0 F1**, and that is a limitation of the comparison rather than a triumph. The strict zero-shot control emits schema-valid JSON on only 2.9% of rows; the few-shot control, shown two format demonstrations, manages 0.0% - *worse*, because the longer prompt gives a 135M model more to lose track of.
-
-The few-shot control was added specifically to separate **format learning** from **task learning**: if an untrained model shown the format could score above zero, then the fine-tune's gain would be attributable to the task rather than to learning to emit JSON. It cannot. So at this model scale the two are inseparable, and the honest reading of **0.1248** vs **0.0000** is: *the fine-tune is what makes the model able to attempt the task at all*, not that it has learned the mapping well. The absolute F1 below is what says how well it learned it.
+The few-shot control (same weights, no training, shown two format demonstrations) separates **format learning** from **task learning**. The zero-shot control emits schema-valid JSON on 99.4% of rows (F1 0.0617) and the few-shot control on 100.0% (F1 0.0846). Any F1 the fine-tune earns above the few-shot score is attributable to learning the task rather than to learning to emit JSON: **0.2089** for the fine-tune versus **0.0846** few-shot. The per-field breakdown below shows how well each field was learned.
 
 ## Per-field breakdown
 
@@ -30,149 +28,90 @@ The few-shot control was added specifically to separate **format learning** from
 
 | Field | Precision | Recall | F1 | Exact match (when present) | Correct abstention (when absent) | Support |
 |---|---|---|---|---|---|---|
-| `subject` | 0.205 | 0.187 | **0.196** | 0.000 | 0.000 | 70 |
-| `style` | 0.000 | 0.000 | **0.000** | 0.000 | 0.868 | 17 |
-| `medium` | 0.182 | 0.164 | **0.172** | 0.172 | 0.780 | 29 |
-| `lighting` | 0.229 | 0.381 | **0.286** | 0.273 | 0.831 | 11 |
-| `tone` | 0.000 | 0.000 | **0.000** | 0.000 | 0.934 | 9 |
-| `modifiers` | 0.102 | 0.089 | **0.095** | 0.081 | 0.818 | 37 |
-| `negative_constraints` *(low support)* | 0.000 | 0.000 | **0.000** | 0.000 | 1.000 | 0 |
+| `subject` | 0.263 | 0.229 | **0.245** | 0.022 | 0.000 | 322 |
+| `style` | 0.275 | 0.188 | **0.224** | 0.164 | 0.840 | 134 |
+| `medium` | 0.303 | 0.256 | **0.277** | 0.221 | 0.743 | 131 |
+| `lighting` | 0.200 | 0.120 | **0.150** | 0.103 | 0.913 | 58 |
+| `tone` | 0.163 | 0.125 | **0.142** | 0.118 | 0.919 | 51 |
+| `modifiers` | 0.230 | 0.203 | **0.216** | 0.111 | 0.649 | 171 |
+| `negative_constraints` *(low support)* | 0.000 | 0.000 | **0.000** | 0.000 | 1.000 | 2 |
 
-**Headline macro F1** (excluding `negative_constraints`): **0.1248**
-Full macro F1 (all 7 fields): 0.1070
-Rows scored: 70
+**Headline macro F1** (excluding `negative_constraints`): **0.2089**
+Full macro F1 (all 7 fields): 0.1791
+Rows scored: 322
 
 ### Zero-shot control
 
 | Field | Precision | Recall | F1 | Exact match (when present) | Correct abstention (when absent) | Support |
 |---|---|---|---|---|---|---|
-| `subject` | 0.000 | 0.000 | **0.000** | 0.000 | 0.000 | 70 |
-| `style` | 0.000 | 0.000 | **0.000** | 0.000 | 0.962 | 17 |
-| `medium` | 0.000 | 0.000 | **0.000** | 0.000 | 0.951 | 29 |
-| `lighting` | 0.000 | 0.000 | **0.000** | 0.000 | 0.966 | 11 |
-| `tone` | 0.000 | 0.000 | **0.000** | 0.000 | 0.967 | 9 |
-| `modifiers` | 0.000 | 0.000 | **0.000** | 0.000 | 0.939 | 37 |
-| `negative_constraints` *(low support)* | 0.000 | 0.000 | **0.000** | 0.000 | 0.986 | 0 |
+| `subject` | 0.157 | 0.087 | **0.112** | 0.000 | 0.000 | 322 |
+| `style` | 0.049 | 0.119 | **0.069** | 0.104 | 0.032 | 134 |
+| `medium` | 0.091 | 0.160 | **0.116** | 0.107 | 0.026 | 131 |
+| `lighting` | 0.021 | 0.102 | **0.035** | 0.052 | 0.023 | 58 |
+| `tone` | 0.007 | 0.047 | **0.013** | 0.039 | 0.018 | 51 |
+| `modifiers` | 0.039 | 0.018 | **0.025** | 0.000 | 0.629 | 171 |
+| `negative_constraints` *(low support)* | 0.000 | 0.000 | **0.000** | 0.000 | 1.000 | 2 |
 
-**Headline macro F1** (excluding `negative_constraints`): **0.0000**
-Full macro F1 (all 7 fields): 0.0000
-Rows scored: 70
+**Headline macro F1** (excluding `negative_constraints`): **0.0617**
+Full macro F1 (all 7 fields): 0.0529
+Rows scored: 322
 
 ### Few-shot control (format shown, task untrained)
 
 | Field | Precision | Recall | F1 | Exact match (when present) | Correct abstention (when absent) | Support |
 |---|---|---|---|---|---|---|
-| `subject` | 0.000 | 0.000 | **0.000** | 0.000 | 0.000 | 70 |
-| `style` | 0.000 | 0.000 | **0.000** | 0.000 | 1.000 | 17 |
-| `medium` | 0.000 | 0.000 | **0.000** | 0.000 | 1.000 | 29 |
-| `lighting` | 0.000 | 0.000 | **0.000** | 0.000 | 1.000 | 11 |
-| `tone` | 0.000 | 0.000 | **0.000** | 0.000 | 1.000 | 9 |
-| `modifiers` | 0.000 | 0.000 | **0.000** | 0.000 | 1.000 | 37 |
-| `negative_constraints` *(low support)* | 0.000 | 0.000 | **0.000** | 0.000 | 1.000 | 0 |
+| `subject` | 0.159 | 0.164 | **0.161** | 0.000 | 0.000 | 322 |
+| `style` | 0.047 | 0.089 | **0.062** | 0.067 | 0.287 | 134 |
+| `medium` | 0.100 | 0.183 | **0.129** | 0.107 | 0.115 | 131 |
+| `lighting` | 0.039 | 0.176 | **0.063** | 0.086 | 0.170 | 58 |
+| `tone` | 0.014 | 0.062 | **0.023** | 0.059 | 0.170 | 51 |
+| `modifiers` | 0.073 | 0.065 | **0.069** | 0.000 | 0.225 | 171 |
+| `negative_constraints` *(low support)* | 0.000 | 0.000 | **0.000** | 0.000 | 1.000 | 2 |
 
-**Headline macro F1** (excluding `negative_constraints`): **0.0000**
-Full macro F1 (all 7 fields): 0.0000
-Rows scored: 70
+**Headline macro F1** (excluding `negative_constraints`): **0.0846**
+Full macro F1 (all 7 fields): 0.0725
+Rows scored: 322
 
 > Scores are agreement with the **weak labels** from Task 1.3, not with ground truth. See `docs/label-quality.md` for those labels' measured per-field precision (`modifiers` in particular is noisy at 0.26, which is why the SFT targets keep only lexicon-recognised entries). `negative_constraints` is populated on 4 of 700 rows, so it is excluded from the headline macro and reported separately.
 
-## Interpreting these numbers honestly
-
-Both stated done-conditions pass, but the absolute quality is weak and the report should
-say so plainly rather than stopping at "PASS".
-
-**What the model clearly learned: the output contract.** 100% schema validity on 70
-held-out rows, up from 2.9% untrained. Every row parses, carries exactly the seven schema
-keys, and satisfies `StructuredFields`. That is a real and useful result - it is what makes
-Task 5.4's constrained decoding a safety net rather than a necessity, and what lets Task
-5.5 wire this into the pipeline at all.
-
-**What it largely did not learn: the mapping.** Headline macro F1 is 0.1248. The per-field
-pattern shows exactly where it went:
-
-| Field | F1 | Correct abstention | Reading |
-|---|---|---|---|
-| `lighting` | 0.286 | 0.831 | Best field - small closed vocabulary ("cinematic lighting", "volumetric light") |
-| `subject` | 0.196 | — | Present on every row, so no abstention to fall back on; ~20% token overlap |
-| `medium` | 0.172 | 0.780 | Exact-match 0.172, so when it commits it is sometimes exactly right |
-| `modifiers` | 0.095 | 0.818 | Hardest - a long open-ended list |
-| `style` | 0.000 | 0.868 | Never correct when present, but abstains correctly 87% of the time |
-| `tone` | 0.000 | 0.934 | Same pattern, more extreme |
-
-The high abstention rates next to near-zero F1 are the tell: the model learned the
-**majority class**. `style` is absent from 76% of targets, `tone` from 87%, so predicting
-`null` is a strong strategy that costs nothing in abstention terms and earns nothing in F1.
-It learned the prior and the format, not the evidence-to-field mapping.
-
-**Three reasons that is unsurprising, in order of likely impact:**
-
-1. **560 training rows.** For fields whose vocabulary is open-ended and culturally specific
-   ("octane render", "trending on artstation", artist names), a few hundred examples is very
-   little signal per vocabulary item.
-2. **135M parameters.** That both controls score 0.0 F1 - including the one *shown* the
-   format - is direct evidence this model has no usable prior for the task. It has to learn
-   everything from those 560 rows.
-3. **A noisy target.** Scores are agreement with the Task 1.3 weak labels, whose own
-   measured field-level precision is `subject` 0.87, `style` 0.93, `medium` 1.00,
-   `lighting` 0.93, `tone` 0.75, `modifiers` 0.26 (`docs/label-quality.md`). Perfect
-   agreement with a noisy target is neither achievable nor desirable, so there is a ceiling
-   well below 1.0 - though nowhere near as low as 0.12.
-
-**What this means for the project.** The honest headline is: *the fine-tune reliably
-produces well-formed structured output, and does so 2.7x faster than the untrained model
-(3.34 vs 8.88 s/row), but does not yet reconstruct fields accurately enough to claim it
-beats PEZ on content.* The Task 8.1 benchmark should report this number as it stands, and
-the Task 8.3 failure analysis has an obvious first question: how much of the gap is
-majority-class collapse versus genuine inability.
-
-**Highest-value next steps, cheapest first:**
-
-- **Re-weight the loss away from `null`.** The majority-class collapse is the single
-  clearest failure mode, and it is addressable without more data or a bigger model.
-- **Step up to SmolLM2-360M** (~3x training cost, ~6 h). The controls scoring 0.0 suggest
-  capacity is a real binding constraint, not just data.
-- **Raise LoRA rank** from r=16. 0.92M trainable params on a 7-field structured task is
-  frugal; val loss was still falling at epoch 5 (1.3185, never turned up), so the run was
-  capacity- or budget-limited rather than overfitting.
-
 ## Sample predictions
 
-**`000000`** — true prompt: `zen landcape brush ink`
+**`000002`** — true prompt: `cyberpunk glasses, cyberpunk, futuristic`
 
-- predicted: `{"subject": "zen infinity ink", "style": null, "medium": null, "lighting": null, "modifiers": [], "tone": null, "negative_constraints": []}`
-- target:    `{"subject":"zen landcape brush ink","style":null,"medium":null,"lighting":null,"modifiers":[],"tone":null,"negative_constraints":[]}`
+- predicted: `{"subject": "portrait of synthwave 8 0 s handsome confident max headroom wearing vr glasses", "style": "synthwave", "medium": "digital art", "lighting": null, "modifiers": [], "tone": null, "negative_constraints": []}`
+- target:    `{"subject":"futuristic","style":"cyberpunk glasses","medium":null,"lighting":null,"modifiers":["cyberpunk"],"tone":null,"negative_constraints":[]}`
 
-**`000006`** — true prompt: `6 5 mm first - person view of the back of some adult college students at their desks facing the front of the class with `
+**`000009`** — true prompt: `tin toys wooden cyborg by alphonse mucha`
 
-- predicted: `{"subject": "a futuristic fine lasers tracing", "style": "art", "medium": "oil on canvas", "lighting": null, "modifiers": ["art of a women in modern fashion", "color ink painting", "candy chip color", "octane hyperrealism photorealistic airbrush collage painting", "dark monochrome", "trending on artnet"], "tone": "dark", "negative_constraints": []}`
-- target:    `{"subject":"6 5 mm first - person view of the back of some adult college students at their desks facing the front of the class with big heads takato yamamoto","style":null,"medium":null,"lighting":null,"modifiers":[],"tone":null,"negative_constraints":[]}`
+- predicted: `{"subject": "a humanoid creature on other planets that appear intelligent is talking about life", "style": null, "medium": null, "lighting": null, "modifiers": [], "tone": null, "negative_constraints": []}`
+- target:    `{"subject":"tin toys wooden cyborg by alphonse mucha","style":null,"medium":null,"lighting":null,"modifiers":[],"tone":null,"negative_constraints":[]}`
 
-**`000012`** — true prompt: `a three year old boy with ginger hair wearing denim overalls chasing butterflies. clean elegant painting, beautiful deta`
+**`000025`** — true prompt: `made in abyss cutscene`
 
-- predicted: `{"subject": "realistic painting maine coon cat wearing witch hat sleeping near hearth in bakery dontuts cakes", "style": null, "medium": "cinematic minecraft", "lighting": null, "modifiers": ["highly detailed", "elegant", "fine details", "masterpiece", "trending on artstation"], "tone": "realistic", "negative_constraints": []}`
-- target:    `{"subject":"a three year old boy with ginger hair wearing denim overalls chasing butterflies","style":null,"medium":null,"lighting":null,"modifiers":["clean elegant painting","beautiful detailed face"],"tone":null,"negative_constraints":[]}`
+- predicted: `{"subject": "bruce campbell in made in abyss", "style": null, "medium": null, "lighting": null, "modifiers": [], "tone": null, "negative_constraints": []}`
+- target:    `{"subject":"made in abyss cutscene","style":null,"medium":null,"lighting":null,"modifiers":[],"tone":null,"negative_constraints":[]}`
 
-**`000013`** — true prompt: `symmetry ( badass ) cyberborg mark zuckerberg ultra detailed, intricate, anime, dynamic lighting, digital art, digital p`
+**`000026`** — true prompt: `mr. and mrs. dursley of number four, privet drive, were proud to say that they were perfectly normal, thank you very muc`
 
-- predicted: `{"subject": "a robot with glowing eyes", "style": "cyberpunk", "medium": "vector behance hd jesper ejsing", "lighting": "digital art", "modifiers": ["vintage retro scifi", "trending on artstation", "symmetry!!!"], "tone": null, "negative_constraints": []}`
-- target:    `{"subject":"symmetry badass cyberborg mark zuckerberg ultra detailed","style":"anime","medium":"digital art","lighting":"dynamic lighting","modifiers":["intricate","digital painting","art station","sharp focus","illustration"],"tone":null,"negative_constraints":[]}`
+- predicted: `{"subject": "oliver hardy and stan laurel in game of thrones", "style": null, "medium": null, "lighting": null, "modifiers": [], "tone": null, "negative_constraints": []}`
+- target:    `{"subject":"mr","style":null,"medium":null,"lighting":null,"modifiers":[],"tone":null,"negative_constraints":[]}`
 
-**`000029`** — true prompt: `a hypertorus shaped everything bagel`
+**`000027`** — true prompt: `bruce campbell is looking like 😑, papyrus`
 
-- predicted: `{"subject": "dslr food photograph of pizza with gumball and peanut butter toppings", "style": null, "medium": null, "lighting": null, "modifiers": [], "tone": null, "negative_constraints": []}`
-- target:    `{"subject":"a hypertorus shaped everything bagel","style":null,"medium":null,"lighting":null,"modifiers":[],"tone":null,"negative_constraints":[]}`
+- predicted: `{"subject": "Nicolas Cage as a Mafia boss from 1960s", "style": "concept art", "medium": null, "lighting": null, "modifiers": ["highly detailed", "artstation", "smooth", "sharp focus", "illustration"], "tone": null, "negative_constraints": []}`
+- target:    `{"subject":"bruce campbell is looking like 😑","style":null,"medium":null,"lighting":null,"modifiers":[],"tone":null,"negative_constraints":[]}`
 
-**`000031`** — true prompt: `queen of hearts suggestive full color portrait tarot card`
+**`000030`** — true prompt: `constructivism art table made of rectangle tetris, octane render, trending on artstation`
 
-- predicted: `{"subject": "nice girl with a crown on her head", "style": null, "medium": null, "lighting": null, "modifiers": [], "tone": null, "negative_constraints": []}`
-- target:    `{"subject":"queen of hearts suggestive full color portrait tarot card","style":null,"medium":null,"lighting":null,"modifiers":[],"tone":null,"negative_constraints":[]}`
+- predicted: `{"subject": "a modern table leg made of rectangle tetris", "style": null, "medium": "octane render", "lighting": null, "modifiers": ["trending on artstation"], "tone": null, "negative_constraints": []}`
+- target:    `{"subject":"constructivism art table made of rectangle tetris","style":null,"medium":"octane render","lighting":null,"modifiers":["trending on artstation"],"tone":null,"negative_constraints":[]}`
 
-**`000033`** — true prompt: `multidimensional fractal - c 2 0. 0`
+**`000040`** — true prompt: `$ ki mask slump god`
 
-- predicted: `{"subject": "zen infinity ink", "style": null, "medium": null, "lighting": null, "modifiers": [], "tone": null, "negative_constraints": []}`
-- target:    `{"subject":"multidimensional fractal - c 2 0. 0","style":null,"medium":null,"lighting":null,"modifiers":[],"tone":null,"negative_constraints":[]}`
+- predicted: `{"subject": "kanye west wearing a mask", "style": null, "medium": null, "lighting": null, "modifiers": [], "tone": null, "negative_constraints": []}`
+- target:    `{"subject":"$ ki mask slump god","style":null,"medium":null,"lighting":null,"modifiers":[],"tone":null,"negative_constraints":[]}`
 
-**`000036`** — true prompt: `barack obama having a boxing match against darth vader`
+**`000043`** — true prompt: `the slump god, rapper, character portrait, standing at attention in military garb, 1 8 th century, american romanticism,`
 
-- predicted: `{"subject": "film still of darth vader in pulp fiction", "style": null, "medium": null, "lighting": null, "modifiers": [], "tone": null, "negative_constraints": []}`
-- target:    `{"subject":"barack obama having a boxing match against darth vader","style":null,"medium":null,"lighting":null,"modifiers":[],"tone":null,"negative_constraints":[]}`
+- predicted: `{"subject": "portrait of george washington wearing a military uniform", "style": null, "medium": null, "lighting": null, "modifiers": [], "tone": null, "negative_constraints": []}`
+- target:    `{"subject":"the slump god","style":"american romanticism","medium":"oil on canvas","lighting":null,"modifiers":["character portrait","oil on canvas by william sidney mount","trending on artstation"],"tone":null,"negative_constraints":[]}`
